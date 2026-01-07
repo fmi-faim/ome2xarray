@@ -1,30 +1,63 @@
 from dask import delayed
 from pathlib import Path
 from ome_types import from_xml, OME
+from ome_types.model import Image
 
 import dask.array as da
 import numpy as np
 import tifffile
+import warnings
 import xarray as xr
 
-class CompanionFile():
 
+class CompanionFile:
     _ome: OME
     _parent_path: Path
 
     def __init__(self, path: Path):
-        with open(path, 'r', encoding="utf8") as file:
-           self._parent_path = path.parent
-           self._ome = from_xml(file.read())
+        with open(path, "r", encoding="utf8") as file:
+            self._parent_path = path.parent
+            self._ome = from_xml(file.read())
 
-    def get_dataarray(self):
+    def get_dataset(self, image_index: int) -> xr.Dataset:
         """
-        Create a DataArray populated with the pixel data.
+        Create a Dataset for one image/series from the companion.ome file.
+        Channels are included as separate DataArrays with dims (t, z, y, x).
+
+        Parameters:
+        -----------
+        image_index : int
+            Index of the image/series to retrieve
+        Returns:
+        --------
+        xr.Dataset
+            Dataset containing a DataArray per channel with dims (t, z, y, x).
         """
-        return create_ome_xarray(
-            ome_metadata=self._ome,
+        if image_index < 0 or image_index >= len(self._ome.images):
+            raise IndexError(
+                f"image_index {image_index} out of range. CompanionFile contains {len(self._ome.images)} image(s)."
+            )
+        return _create_channel_dataset(
+            image=self._ome.images[image_index],
             base_path=self._parent_path,
         )
+
+    def get_datatree(self) -> xr.DataTree:
+        """
+        Create an xarray.DataTree containing all images/series from the companion.ome file.
+
+        Each image is included as a child node, with its own Dataset (containing the channel DataArrays and coordinates).
+
+        Returns:
+        --------
+        DataTree
+            xarray.DataTree with each image as a child node, each node containing a Dataset with the channel DataArrays and its coordinates.
+        """
+        children = {}
+        for idx, image in enumerate(self._ome.images):
+            ds = self.get_dataset(idx)
+            children[image.id] = xr.DataTree(dataset=ds, name=image.id)
+        return xr.DataTree(name="root", children=children)
 
     def get_ome_metadata(self) -> OME:
         """
@@ -33,151 +66,130 @@ class CompanionFile():
         return self._ome
 
 
-class OMEReader:
-    def __init__(self, ome_metadata, base_path):
-        self.ome_metadata = ome_metadata
-        self.base_path = Path(base_path)
-        self.pixels = ome_metadata.images[0].pixels
-        
-        # Pre-load and cache all memory maps
-        self.memmaps = {}
-        self._load_memmaps()
-        
-        # Create spatial index for fast lookups
-        self.block_index = {}
-        self._create_block_index()
-    
-    def _load_memmaps(self):
-        """Pre-load memory maps for all files"""
-        file_names = {block.uuid.file_name for block in self.pixels.tiff_data_blocks}
-        
-        for file_name in file_names:
-            file_path = self.base_path / file_name
-            try:
-                # Memory map the entire file once
-                self.memmaps[file_name] = tifffile.memmap(file_path, mode='r')
-            except Exception as e:
-                print(f"Warning: Could not memory map {file_name}: {e}")
-    
-    def _create_block_index(self):
-        """Create index mapping (t,c,z) -> (file_name, ifd)"""
-        for block in self.pixels.tiff_data_blocks:
-            key = (
-                block.first_t, 
-                block.first_c, 
-                getattr(block, 'first_z', 0)
-            )
-            self.block_index[key] = (block.uuid.file_name, block.ifd)
-    
-    def read_plane(self, t, c, z):
-        """Read a single plane - optimized for memory-mapped access"""
-        key = (t, c, z)
-        
-        if key not in self.block_index:
-            # Return zeros for missing planes
-            return np.zeros(
-                (self.pixels.size_y, self.pixels.size_x), 
-                dtype=self.pixels.pixel_type
-            )
-        
-        file_name, ifd = self.block_index[key]
-        
-        if file_name not in self.memmaps:
-            # Fallback to direct file access if memmap failed
-            file_path = self.base_path / file_name
-            with tifffile.TiffFile(file_path) as tif:
-                return tif.pages[ifd].asarray()
-        
-        # Use pre-loaded memory map
-        return self.memmaps[file_name][ifd]
-
-def create_ome_xarray(ome_metadata, base_path, chunks=None):
+def _create_channel_dataset(image: Image, base_path, chunks=None):
     """
-    Create xarray DataArray from OME metadata with dask backing
-    
-    Parameters:
-    -----------
-    chunks : dict, optional
-        Dask chunk sizes, e.g. {'t': 1, 'c': 1, 'z': 1, 'y': 2048, 'x': 2048}
-        If None, defaults to single planes with full spatial dimensions
+    Build an xarray.Dataset for one OME Image where each channel is a
+    separate DataArray with dims (t, z, y, x). Time and spatial coordinates
+    are shared across variables.
     """
-    reader = OMEReader(ome_metadata, base_path)
+    reader = OMEImageReader(image, base_path)
     pixels = reader.pixels
-    
-    # Default chunking: one plane per chunk, full spatial dimensions
+
     if chunks is None:
-        chunks = {'t': 1, 'c': 1, 'z': 1, 'y': pixels.size_y, 'x': pixels.size_x}
-    
-    # Create delayed reading function
-    @delayed
-    def read_plane_delayed(t, c, z):
-        return reader.read_plane(t, c, z)
-    
-    # Build dask array by stacking delayed arrays
-    # This approach scales well to thousands of planes
-    arrays_by_t = []
-    
-    for t in range(pixels.size_t):
-        arrays_by_c = []
-        
-        for c in range(pixels.size_c):
+        chunks = {"t": 1, "z": 1, "y": pixels.size_y, "x": pixels.size_x}
+
+    # Per-plane positions (z, y, x) from OME metadata, fallback to pixel indices * pixel size
+    z_positions = [
+        plane.position_z if plane.position_z is not None else 0.0
+        for plane in pixels.planes[: pixels.size_z]
+    ]
+    x_pixel_size = pixels.physical_size_x or 0.0
+    y_pixel_size = pixels.physical_size_y or 0.0
+    x_offsets = [(plane.position_x or 0.0) for plane in pixels.planes[: pixels.size_z]]
+    y_offsets = [(plane.position_y or 0.0) for plane in pixels.planes[: pixels.size_z]]
+    if not all(np.isclose(x_offsets[0], xo) for xo in x_offsets):
+        raise ValueError(
+            "position_x offset is not the same across all planes; cannot create 1D calibrated x coordinate."
+        )
+    if not all(np.isclose(y_offsets[0], yo) for yo in y_offsets):
+        raise ValueError(
+            "position_y offset is not the same across all planes; cannot create 1D calibrated y coordinate."
+        )
+    x_offset = x_offsets[0]
+    y_offset = y_offsets[0]
+    x_coords = np.arange(pixels.size_x) * x_pixel_size + x_offset
+    y_coords = np.arange(pixels.size_y) * y_pixel_size + y_offset
+
+    coords = {
+        "t": np.arange(pixels.size_t),
+        "z": z_positions,
+        "y": y_coords,
+        "x": x_coords,
+    }
+
+    attrs = {
+        "pixel_size_x": pixels.physical_size_x,
+        "pixel_size_y": pixels.physical_size_y,
+        "pixel_size_z": pixels.physical_size_z,
+    }
+
+    channel_names = [ch.name for ch in pixels.channels]
+    data_vars = {}
+    # Outer loop over channels
+    for c, ch_name in enumerate(channel_names):
+        # Build dask array for this channel: shape (t, z, y, x)
+        arrays_by_t = []
+        for t in range(pixels.size_t):
             arrays_by_z = []
-            
             for z in range(pixels.size_z):
-                delayed_plane = read_plane_delayed(t, c, z)
-                
+
+                @delayed
+                def read_plane_delayed(t=t, c=c, z=z):
+                    return reader.read_plane(c, t, z)
+
                 dask_plane = da.from_delayed(
-                    delayed_plane,
+                    read_plane_delayed(),
                     shape=(pixels.size_y, pixels.size_x),
                     dtype=pixels.type.value,
                 )
-                
                 arrays_by_z.append(dask_plane)
-            
-            if arrays_by_z:
-                arrays_by_c.append(da.stack(arrays_by_z, axis=0))
-        
-        if arrays_by_c:
-            arrays_by_t.append(da.stack(arrays_by_c, axis=0))
-    
-    # Stack into final 5D array
-    dask_array = da.stack(arrays_by_t, axis=0)
-    
-    # Rechunk according to specified chunks
-    chunk_tuple = (
-        chunks.get('t', 1),
-        chunks.get('c', 1), 
-        chunks.get('z', 1),
-        chunks.get('y', pixels.size_y),
-        chunks.get('x', pixels.size_x)
-    )
-    dask_array = dask_array.rechunk(chunk_tuple)
-    
-    # Create coordinate arrays
-    coords = {
-        't': np.arange(pixels.size_t),
-        'c': np.arange(pixels.size_c),
-        'z': np.arange(pixels.size_z), 
-        'y': np.arange(pixels.size_y),
-        'x': np.arange(pixels.size_x)
-    }
-    
-    # Add metadata from OME if available
-    attrs = {}
-    if hasattr(pixels, 'physical_size_x') and pixels.physical_size_x:
-        attrs['pixel_size_x'] = pixels.physical_size_x
-    if hasattr(pixels, 'physical_size_y') and pixels.physical_size_y:
-        attrs['pixel_size_y'] = pixels.physical_size_y
-    if hasattr(pixels, 'physical_size_z') and pixels.physical_size_z:
-        attrs['pixel_size_z'] = pixels.physical_size_z
-    
-    # Create xarray DataArray
-    data_array = xr.DataArray(
-        dask_array,
-        dims=['t', 'c', 'z', 'y', 'x'],
-        coords=coords,
-        attrs=attrs,
-        name='ome_image'
-    )
-    
-    return data_array
+            arrays_by_t.append(da.stack(arrays_by_z, axis=0))
+        dask_array = da.stack(arrays_by_t, axis=0)
+        chunk_tuple = (
+            chunks.get("t", 1),
+            chunks.get("z", 1),
+            chunks.get("y", pixels.size_y),
+            chunks.get("x", pixels.size_x),
+        )
+        dask_array = dask_array.rechunk(chunk_tuple)
+        data_vars[ch_name] = xr.DataArray(
+            dask_array,
+            dims=["t", "z", "y", "x"],
+            coords=coords,
+            attrs=attrs,
+            name=ch_name,
+        )
+    return xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs)
+
+
+class OMEImageReader:
+    """Reader for a single OME Image (series)."""
+
+    def __init__(self, image: Image, base_path):
+        self.image = image
+        self.base_path = Path(base_path)
+        self.pixels = image.pixels
+
+        # Create spatial index for fast lookups
+        self.block_index = {}
+        self._create_block_index()
+
+    # Files are opened lazily when a plane is read to keep behavior simple
+    # and rely on delayed Dask tasks for loading TIFF plane data.
+
+    def _create_block_index(self):
+        """Create index mapping (c,t,z) -> (file_name, ifd)"""
+        for block in self.pixels.tiff_data_blocks:
+            key = (block.first_c, block.first_t, getattr(block, "first_z", 0))
+            if (self.base_path / block.uuid.file_name).exists():
+                self.block_index[key] = (block.uuid.file_name, block.ifd)
+            else:
+                msg = f"Missing data: file {block.uuid.file_name} not found in {self.base_path}."
+                warnings.warn(msg, UserWarning)
+
+
+    def read_plane(self, c, t, z):
+        """Read a single (c, t, z) plane by opening the TIFF file on demand."""
+        key = (c, t, z)
+
+        if key not in self.block_index:
+            # Return zeros for missing planes
+            return np.zeros(
+                (self.pixels.size_y, self.pixels.size_x), dtype=self.pixels.type.value
+            )
+
+        file_name, ifd = self.block_index[key]
+
+        file_path = self.base_path / file_name
+        with tifffile.TiffFile(file_path) as tif:
+            return tif.pages[ifd].asarray()
