@@ -18,6 +18,8 @@ jobs:
   run:
     name: ${{ matrix.pixi-environment }} - ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
