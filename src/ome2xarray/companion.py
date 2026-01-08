@@ -78,11 +78,21 @@ def _create_channel_dataset(image: Image, base_path, chunks=None):
     if chunks is None:
         chunks = {"t": 1, "z": 1, "y": pixels.size_y, "x": pixels.size_x}
 
-    # Per-plane positions (z, y, x) from OME metadata, fallback to pixel indices * pixel size
-    z_positions = [
-        plane.position_z if plane.position_z is not None else 0.0
-        for plane in pixels.planes[: pixels.size_z]
-    ]
+    # Per-plane positions (z, y, x) from OME metadata
+    # Create mapping from the_z index to position_z value
+    z_position_map = {}
+    for plane in pixels.planes:
+        if plane.the_z not in z_position_map:
+            z_position_map[plane.the_z] = plane.position_z
+        elif not np.isclose(z_position_map[plane.the_z], plane.position_z):
+            raise ValueError(
+                f"Inconsistent position_z values for the_z={plane.the_z}: "
+                f"{z_position_map[plane.the_z]} != {plane.position_z}"
+            )
+    
+    # Build z_positions array using the mapping
+    z_positions = [z_position_map[z] for z in range(pixels.size_z)]
+    
     x_pixel_size = pixels.physical_size_x or 0.0
     y_pixel_size = pixels.physical_size_y or 0.0
     x_offsets = [(plane.position_x or 0.0) for plane in pixels.planes[: pixels.size_z]]

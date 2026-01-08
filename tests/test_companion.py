@@ -106,3 +106,34 @@ def test_get_datatree_single_image():
         assert data_array.shape == (1, 3, 512, 512)  # (T, Z, Y, X)
         assert data_array.dtype == "uint16"
         assert data_array.sum().compute() == 0  # missing raw files
+
+
+def test_z_positions_n2_lin28a633():
+    """Test that z positions are correctly extracted from plane metadata"""
+    companion_file_path = (
+        Path(__file__).parent
+        / "resources"
+        / "n2-lin28a633_adult_2"
+        / "n2-lin28a633_adult_2.companion.ome"
+    )
+    companion_file = CompanionFile(companion_file_path)
+    with pytest.warns(UserWarning, match="Missing data: file"):
+        dataset = companion_file.get_dataset(image_index=0)
+    
+    # Expected z positions: 65.4 to 84.0 in steps of 0.3
+    import numpy as np
+    expected_z = np.arange(65.4, 84.0 + 0.01, 0.3)  # +0.01 to include 84.0
+    
+    # Get z coordinates from dataset
+    z_coords = dataset.coords["z"].values
+    
+    # Get size_z from metadata
+    metadata = companion_file.get_ome_metadata()
+    size_z = metadata.images[0].pixels.size_z
+    
+    assert len(z_coords) == size_z, f"Expected {size_z} z positions, got {len(z_coords)}"
+    assert np.allclose(z_coords, expected_z, atol=1e-6), (
+        f"Z positions don't match expected range. "
+        f"Expected: {expected_z[:3]}...{expected_z[-3:]}, "
+        f"Got: {z_coords[:3]}...{z_coords[-3:]}"
+    )
