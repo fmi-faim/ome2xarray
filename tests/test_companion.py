@@ -1,6 +1,6 @@
 import pytest
 
-from ome_dataarray.companion import CompanionFile
+from ome2xarray.companion import CompanionFile
 from pathlib import Path
 
 

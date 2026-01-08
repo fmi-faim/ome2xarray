@@ -11603,17 +11603,6 @@ packages:
   - pkg:pypi/numpy?source=hash-mapping
   size: 7301600
   timestamp: 1766373809921
-- pypi: ./
-  name: ome-dataarray
-  version: 0.1.0
-  sha256: 49afafce80abeb73bc7c6c433a0434e6dba9ffe0e28846293e3b938b106bb21f
-  requires_dist:
-  - ome-types>=0.6.1,<0.7
-  - xarray>=2025.9.0,<2026
-  - dask>=2025.7.0,<2026
-  - tifffile>=2024.12.12,<2026
-  requires_python: '>=3.11'
-  editable: true
 - conda: https://conda.anaconda.org/conda-forge/noarch/ome-types-0.6.3-pyhcf101f3_1.conda
   sha256: 58d1f8f77711ff71ee4a29d5ba93b358028d8cf4c82b46005fcf53831b77e9ed
   md5: 61b16f74fc439af65d724d9cbd6061f4
@@ -11631,6 +11620,17 @@ packages:
   - pkg:pypi/ome-types?source=hash-mapping
   size: 141958
   timestamp: 1764272129097
+- pypi: ./
+  name: ome2xarray
+  version: 0.1.0
+  sha256: 4cfe442238dd50029d0a868bd51948599f34230ac164ba388ed995078ae054d8
+  requires_dist:
+  - ome-types>=0.6.1,<0.7
+  - xarray>=2025.9.0,<2026
+  - dask>=2025.7.0,<2026
+  - tifffile>=2024.12.12,<2026
+  requires_python: '>=3.11'
+  editable: true
 - conda: https://conda.anaconda.org/conda-forge/linux-64/openjpeg-2.5.4-h55fea9a_0.conda
   sha256: 3900f9f2dbbf4129cf3ad6acf4e4b6f7101390b53843591c53b00f034343bc4d
   md5: 11b3379b191f63139e29c0d19dee24cd

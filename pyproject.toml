@@ -1,6 +1,6 @@
 [project]
 authors = [{name = "Jan Eglinger", email = "jan.eglinger@fmi.ch"}]
-name = "ome-dataarray"
+name = "ome2xarray"
 requires-python = ">= 3.11"
 version = "0.1.0"
 dependencies = [
@@ -19,7 +19,7 @@ channels = ["conda-forge"]
 platforms = ["win-64", "linux-64", "osx-arm64"]
 
 [tool.pixi.pypi-dependencies]
-ome_dataarray = { path = ".", editable = true }
+ome2xarray = { path = ".", editable = true }
 
 [tool.pixi.tasks]
 
