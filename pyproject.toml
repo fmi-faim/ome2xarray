@@ -2,7 +2,7 @@
 authors = [{name = "Jan Eglinger", email = "jan.eglinger@fmi.ch"}]
 name = "ome2xarray"
 requires-python = ">= 3.11"
-version = "0.1.0"
+dynamic = ["version"]
 dependencies = [
     "ome-types>=0.6.1,<0.7",
     "xarray>=2025.9.0,<2026",
@@ -12,10 +12,13 @@ dependencies = [
 
 [build-system]
 build-backend = "hatchling.build"
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
+
+[tool.hatch.version]
+source = "vcs"
 
 [tool.pixi.workspace]
-channels = ["conda-forge"]
+channels = ["https://prefix.dev/conda-forge"]
 platforms = ["win-64", "linux-64", "osx-arm64"]
 
 [tool.pixi.pypi-dependencies]
@@ -51,10 +54,10 @@ python = "3.14.*"
 jupyter = ">=1.1.1,<2"
 
 [tool.pixi.dependencies]
-xarray = ">=2025.12.0,<2026"
-dask = ">=2025.12.0,<2026"
-ome-types = ">=0.6.3,<0.7"
-tifffile = ">=2025.12.20,<2026"
+xarray = ">=2025.9.0,<2026"
+dask = ">=2025.7.0,<2026"
+ome-types = ">=0.6.1,<0.7"
+tifffile = ">=2024.12.12,<2026"
 
 [dependency-groups]
 test = ["pytest", "pytest-cov"]
