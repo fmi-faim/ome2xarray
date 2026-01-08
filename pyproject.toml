@@ -2,6 +2,7 @@
 authors = [{name = "Jan Eglinger", email = "jan.eglinger@fmi.ch"}]
 name = "ome2xarray"
 requires-python = ">= 3.11"
+license = "BSD-3-Clause"
 dynamic = ["version"]
 dependencies = [
     "ome-types>=0.6.1,<0.7",

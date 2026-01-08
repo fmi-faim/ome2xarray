@@ -11620,8 +11620,8 @@ packages:
   timestamp: 1764272129097
 - pypi: ./
   name: ome2xarray
-  version: 0.1.dev8+g539c7ba42.d20260108
-  sha256: 06086dbbeec8582c2099d86301c47689c95cf61d50f6f2d53cf6295c2e77160e
+  version: 0.1.dev10+gb3479a19b
+  sha256: a0077bd61d1583a0f3ea2cd89a4d089d9786ec74847bd2a49060006e4b0467dc
   requires_dist:
   - dask>=2025.7.0,<2026
   - ome-types>=0.6.1,<0.7
