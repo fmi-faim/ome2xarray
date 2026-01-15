@@ -139,6 +139,20 @@ def test_z_positions_n2_lin28a633():
     )
 
 
+def _verify_dataset(dataset, expected_sum):
+    """Helper function to verify dataset structure and data integrity"""
+    assert dataset is not None
+    for ch_name, data_array in dataset.data_vars.items():
+        assert data_array.shape == (1, 3, 512, 512)  # (T, Z, Y, X)
+        assert data_array.dtype == "uint16"
+    
+    # Data integrity check (sum all channels)
+    total_sum = sum(
+        data_array.sum().compute() for data_array in dataset.data_vars.values()
+    )
+    assert total_sum == expected_sum
+
+
 def test_data_folder_parameter():
     """Test that data_folder parameter allows specifying a custom data folder"""
     companion_file_path = (
@@ -153,17 +167,7 @@ def test_data_folder_parameter():
     companion_file = CompanionFile(companion_file_path, data_folder=data_folder)
     dataset = companion_file.get_dataset(image_index=6)
     
-    # Verify data can be loaded
-    assert dataset is not None
-    for ch_name, data_array in dataset.data_vars.items():
-        assert data_array.shape == (1, 3, 512, 512)  # (T, Z, Y, X)
-        assert data_array.dtype == "uint16"
-    
-    # Data integrity check (sum all channels)
-    total_sum = sum(
-        data_array.sum().compute() for data_array in dataset.data_vars.values()
-    )
-    assert total_sum == 9404845159
+    _verify_dataset(dataset, expected_sum=9404845159)
 
 
 def test_data_folder_default_behavior():
@@ -179,14 +183,4 @@ def test_data_folder_default_behavior():
     companion_file = CompanionFile(companion_file_path)
     dataset = companion_file.get_dataset(image_index=6)
     
-    # Verify data can be loaded (same as test_data_folder_parameter)
-    assert dataset is not None
-    for ch_name, data_array in dataset.data_vars.items():
-        assert data_array.shape == (1, 3, 512, 512)  # (T, Z, Y, X)
-        assert data_array.dtype == "uint16"
-    
-    # Data integrity check (sum all channels)
-    total_sum = sum(
-        data_array.sum().compute() for data_array in dataset.data_vars.values()
-    )
-    assert total_sum == 9404845159
+    _verify_dataset(dataset, expected_sum=9404845159)
