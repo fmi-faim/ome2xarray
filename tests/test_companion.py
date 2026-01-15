@@ -137,3 +137,56 @@ def test_z_positions_n2_lin28a633():
         f"Expected: {expected_z[:3]}...{expected_z[-3:]}, "
         f"Got: {z_coords[:3]}...{z_coords[-3:]}"
     )
+
+
+def test_data_folder_parameter():
+    """Test that data_folder parameter allows specifying a custom data folder"""
+    companion_file_path = (
+        Path(__file__).parent
+        / "resources"
+        / "20250910_VV7-0-0-6-ScanSlide"
+        / "20250910_test4ch_2roi_3z_1_sg1.companion.ome"
+    )
+    data_folder = companion_file_path.parent
+    
+    # Create companion file with explicit data_folder
+    companion_file = CompanionFile(companion_file_path, data_folder=data_folder)
+    dataset = companion_file.get_dataset(image_index=6)
+    
+    # Verify data can be loaded
+    assert dataset is not None
+    for ch_name, data_array in dataset.data_vars.items():
+        assert data_array.shape == (1, 3, 512, 512)  # (T, Z, Y, X)
+        assert data_array.dtype == "uint16"
+    
+    # Data integrity check (sum all channels)
+    total_sum = sum(
+        data_array.sum().compute() for data_array in dataset.data_vars.values()
+    )
+    assert total_sum == 9404845159
+
+
+def test_data_folder_default_behavior():
+    """Test that data_folder defaults to companion file's parent directory"""
+    companion_file_path = (
+        Path(__file__).parent
+        / "resources"
+        / "20250910_VV7-0-0-6-ScanSlide"
+        / "20250910_test4ch_2roi_3z_1_sg1.companion.ome"
+    )
+    
+    # Create companion file without data_folder (default behavior)
+    companion_file = CompanionFile(companion_file_path)
+    dataset = companion_file.get_dataset(image_index=6)
+    
+    # Verify data can be loaded (same as test_data_folder_parameter)
+    assert dataset is not None
+    for ch_name, data_array in dataset.data_vars.items():
+        assert data_array.shape == (1, 3, 512, 512)  # (T, Z, Y, X)
+        assert data_array.dtype == "uint16"
+    
+    # Data integrity check (sum all channels)
+    total_sum = sum(
+        data_array.sum().compute() for data_array in dataset.data_vars.values()
+    )
+    assert total_sum == 9404845159
