@@ -535,6 +535,36 @@ def test_sanitize_pixels_with_include_sg_no_stage_label():
     assert sanitized.tiff_data_blocks[0].uuid.file_name == "test_w1DAPI.ome.tif"
 
 
+def test_sanitize_pixels_with_include_sg_invalid_format():
+    """Test that include_sg=True works gracefully when stage label has invalid format."""
+    pixels = Pixels(
+        id="Pixels:0",
+        dimension_order="XYZCT",
+        type="uint16",
+        size_x=512,
+        size_y=512,
+        size_z=1,
+        size_c=1,
+        size_t=1,
+        channels=[Channel(id="Channel:0", name="DAPI")],
+        tiff_data_blocks=[],
+        planes=[]
+    )
+
+    # Stage label without sg prefix (e.g., just position info)
+    image = Image(
+        id="Image:0",
+        name="test_4:Position5:0",
+        pixels=pixels,
+        stage_label=StageLabel(name="4:Position5:0")
+    )
+
+    sanitized = sanitize_pixels(image, include_sg=True)
+    assert len(sanitized.tiff_data_blocks) == 1
+    # Should have stage position but no stage group suffix
+    assert sanitized.tiff_data_blocks[0].uuid.file_name == "test_w1DAPI_s5.ome.tif"
+
+
 def test_companion_file_filenames_with_and_without_sanitize_sg1():
     """Test that filenames match between original and sanitized (with include_sg=True) for sg1 dataset."""
     companion_file_path = (

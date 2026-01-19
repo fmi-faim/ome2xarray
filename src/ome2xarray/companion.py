@@ -65,7 +65,7 @@ def sanitize_pixels(image: Image, include_sg: bool = False) -> Pixels:
                 # Split by ':' to get the stage group index
                 # Example: "sg:0" -> ["sg", "0"]
                 sg_parts = underscore_parts[1].split(':')
-                if len(sg_parts) == 2:
+                if len(sg_parts) == 2 and sg_parts[0] == 'sg':
                     try:
                         sg_index = int(sg_parts[1])
                         sg_suffix = f"_sg{sg_index + 1}"
