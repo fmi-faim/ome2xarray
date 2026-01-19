@@ -11,21 +11,19 @@ import warnings
 import xarray as xr
 
 
-def sanitize_pixels(image: Image, companion_file_name: str) -> Pixels:
+def sanitize_pixels(image: Image) -> Pixels:
     """
     Sanitize incomplete/corrupted pixels by regenerating tiff_data_blocks and planes.
     
     This function generates:
     - TiffData blocks for each (c, t, z) combination
-    - File names based on the companion file name, channel info, stage position, and timepoint
+    - File names based on the image name, channel info, stage position, and timepoint
     - Plane objects with position information repeated from existing planes
     
     Parameters:
     -----------
     image : Image
         The OME Image object containing pixels to sanitize
-    companion_file_name : str
-        The name of the companion.ome file (e.g., "dataset.companion.ome")
         
     Returns:
     --------
@@ -34,8 +32,13 @@ def sanitize_pixels(image: Image, companion_file_name: str) -> Pixels:
     """
     pixels = image.pixels
     
-    # Extract base name from companion file (remove .companion.ome extension)
-    base_name = Path(companion_file_name).name.removesuffix('.companion.ome')
+    # Extract base name from image.name by removing stage_label suffix
+    base_name = image.name
+    if image.stage_label and image.stage_label.name:
+        # Remove the stage_label suffix (including the preceding underscore)
+        stage_label_suffix = f"_{image.stage_label.name}"
+        if base_name.endswith(stage_label_suffix):
+            base_name = base_name.removesuffix(stage_label_suffix)
     
     # Extract stage position number from stage_label if present
     stage_suffix = ""
@@ -213,10 +216,9 @@ class CompanionFile:
             )
         
         image = self._ome.images[image_index]
-        companion_file_name = self._path.name
         
         # Sanitize the pixels
-        sanitized_pixels = sanitize_pixels(image, companion_file_name)
+        sanitized_pixels = sanitize_pixels(image)
         
         # Replace the image's pixels with sanitized version
         # We need to create a new image with the sanitized pixels
