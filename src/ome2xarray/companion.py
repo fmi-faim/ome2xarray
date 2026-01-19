@@ -1,7 +1,7 @@
 from dask import delayed
 from pathlib import Path
 from ome_types import from_xml, OME
-from ome_types.model import Image
+from ome_types.model import Image, Pixels, TiffData, Plane
 
 import dask.array as da
 import numpy as np
@@ -10,11 +10,136 @@ import warnings
 import xarray as xr
 
 
+def sanitize_pixels(image: Image, companion_file_name: str) -> Pixels:
+    """
+    Sanitize incomplete/corrupted pixels by regenerating tiff_data_blocks and planes.
+    
+    This function generates:
+    - TiffData blocks for each (c, t, z) combination
+    - File names based on the companion file name, channel info, stage position, and timepoint
+    - Plane objects with position information repeated from existing planes
+    
+    Parameters:
+    -----------
+    image : Image
+        The OME Image object containing pixels to sanitize
+    companion_file_name : str
+        The name of the companion.ome file (e.g., "dataset.companion.ome")
+        
+    Returns:
+    --------
+    Pixels
+        A copy of the pixels object with regenerated tiff_data_blocks and planes
+    """
+    pixels = image.pixels
+    
+    # Extract base name from companion file (remove .companion.ome extension)
+    base_name = companion_file_name
+    if base_name.endswith('.companion.ome'):
+        base_name = base_name[:-14]  # Remove '.companion.ome'
+    
+    # Extract stage position number from stage_label if present
+    stage_suffix = ""
+    if image.stage_label and image.stage_label.name:
+        # Parse stage_label.name like "0:Number1_sg:0" or "4:eft_5_sg:0"
+        # Extract the first number after splitting by ":"
+        parts = image.stage_label.name.split(':')
+        if parts:
+            try:
+                stage_pos = int(parts[0])
+                stage_suffix = f"_s{stage_pos + 1}"
+            except (ValueError, IndexError):
+                pass
+    
+    # Collect position information from existing planes if available
+    # We'll use the first plane's position as a template
+    position_x = None
+    position_y = None
+    position_z_by_z = {}  # Map z index to position_z value
+    position_x_unit = None
+    position_y_unit = None
+    position_z_unit = None
+    
+    if pixels.planes:
+        # Get position from first plane
+        first_plane = pixels.planes[0]
+        position_x = first_plane.position_x
+        position_y = first_plane.position_y
+        position_x_unit = first_plane.position_x_unit
+        position_y_unit = first_plane.position_y_unit
+        position_z_unit = first_plane.position_z_unit
+        
+        # Collect z positions for each z index
+        for plane in pixels.planes:
+            if plane.the_z not in position_z_by_z and plane.position_z is not None:
+                position_z_by_z[plane.the_z] = plane.position_z
+    
+    # Generate new TiffData blocks and Planes
+    new_tiff_data_blocks = []
+    new_planes = []
+    
+    for c in range(pixels.size_c):
+        channel = pixels.channels[c]
+        channel_name = channel.name or f"Channel{c}"
+        
+        # Generate file name for this channel
+        # Format: {base_name}_w{c+1}{channel_name}{stage_suffix}{time_suffix}.ome.tif
+        file_base = f"{base_name}_w{c+1}{channel_name}{stage_suffix}"
+        
+        for t in range(pixels.size_t):
+            # Add time suffix only if there are multiple timepoints
+            time_suffix = f"_t{t+1}" if pixels.size_t > 1 else ""
+            file_name = f"{file_base}{time_suffix}.ome.tif"
+            
+            for z in range(pixels.size_z):
+                # Create TiffData block
+                tiff_data = TiffData(
+                    first_c=c,
+                    first_t=t,
+                    first_z=z,
+                    ifd=z,  # IFD index within the file
+                    plane_count=1,
+                    uuid=TiffData.UUID(
+                        file_name=file_name,
+                        value="urn:uuid:00000000-0000-0000-0000-000000000000"  # Placeholder UUID
+                    )
+                )
+                new_tiff_data_blocks.append(tiff_data)
+                
+                # Create Plane object - only include position units if they exist
+                plane_kwargs = {
+                    'the_c': c,
+                    'the_t': t,
+                    'the_z': z,
+                    'position_x': position_x,
+                    'position_y': position_y,
+                    'position_z': position_z_by_z.get(z),
+                }
+                if position_x_unit is not None:
+                    plane_kwargs['position_x_unit'] = position_x_unit
+                if position_y_unit is not None:
+                    plane_kwargs['position_y_unit'] = position_y_unit
+                if position_z_unit is not None:
+                    plane_kwargs['position_z_unit'] = position_z_unit
+                
+                plane = Plane(**plane_kwargs)
+                new_planes.append(plane)
+    
+    # Create a copy of pixels with new tiff_data_blocks and planes
+    pixels_dict = pixels.model_dump()
+    pixels_dict['tiff_data_blocks'] = new_tiff_data_blocks
+    pixels_dict['planes'] = new_planes
+    
+    return Pixels(**pixels_dict)
+
+
 class CompanionFile:
     _ome: OME
     _data_folder: Path
+    _path: Path
 
     def __init__(self, path: Path, data_folder: Path | None = None):
+        self._path = path
         with open(path, "r", encoding="utf8") as file:
             self._data_folder = data_folder if data_folder is not None else path.parent
             self._ome = from_xml(file.read())
@@ -64,6 +189,35 @@ class CompanionFile:
         Get the OME metadata object.
         """
         return self._ome
+
+    def sanitize_image(self, image_index: int) -> None:
+        """
+        Sanitize an image's pixels by regenerating tiff_data_blocks and planes.
+        
+        This is useful for incomplete/corrupted companion.ome files where the
+        tiff_data_blocks or planes are missing or incorrect.
+        
+        Parameters:
+        -----------
+        image_index : int
+            Index of the image to sanitize
+        """
+        if image_index < 0 or image_index >= len(self._ome.images):
+            raise IndexError(
+                f"image_index {image_index} out of range. CompanionFile contains {len(self._ome.images)} image(s)."
+            )
+        
+        image = self._ome.images[image_index]
+        companion_file_name = self._path.name
+        
+        # Sanitize the pixels
+        sanitized_pixels = sanitize_pixels(image, companion_file_name)
+        
+        # Replace the image's pixels with sanitized version
+        # We need to create a new image with the sanitized pixels
+        image_dict = image.model_dump()
+        image_dict['pixels'] = sanitized_pixels
+        self._ome.images[image_index] = Image(**image_dict)
 
 
 def _create_channel_dataset(image: Image, base_path, chunks=None):
