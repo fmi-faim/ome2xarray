@@ -10,7 +10,7 @@
 This project uses **Pixi** for environment and dependency management, not pip or conda directly.
 
 ### Python Versions
-The project supports Python 3.11, 3.12, and 3.13. Testing is performed across all supported versions.
+The project supports Python 3.11, 3.12, 3.13, and 3.14. Active CI testing is performed on Python 3.11, 3.12, and 3.13 (Python 3.14 support is configured but not yet included in CI).
 
 ### Setup
 To set up the development environment:
@@ -59,6 +59,7 @@ pixi run test
 pixi run --environment py311 test
 pixi run --environment py312 test
 pixi run --environment py313 test
+pixi run --environment py314 test  # Available but not yet in CI
 
 # Generate XML coverage report (used in CI)
 pixi run cov-xml
