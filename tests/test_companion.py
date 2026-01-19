@@ -139,48 +139,36 @@ def test_z_positions_n2_lin28a633():
     )
 
 
-def _verify_dataset(dataset, expected_sum):
-    """Helper function to verify dataset structure and data integrity"""
-    assert dataset is not None
-    for ch_name, data_array in dataset.data_vars.items():
-        assert data_array.shape == (1, 3, 512, 512)  # (T, Z, Y, X)
-        assert data_array.dtype == "uint16"
-    
-    # Data integrity check (sum all channels)
+@pytest.mark.parametrize(
+    "companion_file_name,image_index,expected_sum",
+    [
+        ("20250910_test4ch_2roi_3z_1_sg1.companion.ome", 6, 9404845159),
+    ],
+)
+def test_isolated_companion_file(
+    companion_file_name, image_index, expected_sum
+):
+    folder = Path(__file__).parent / "resources" / "20250910_VV7-0-0-6-ScanSlide"
+
+    main_companion_path = folder / companion_file_name
+    isolated_companion_path = folder / "isolated" / companion_file_name
+
+    main_companion = CompanionFile(main_companion_path)
+    isolated_companion = CompanionFile(isolated_companion_path, data_folder=folder)
+
+    main_dataset = main_companion.get_dataset(image_index=image_index)
+    isolated_dataset = isolated_companion.get_dataset(image_index=image_index)
+
+    # Check that datasets are identical
+    for ch_name in main_dataset.data_vars:
+        main_array = main_dataset[ch_name]
+        isolated_array = isolated_dataset[ch_name]
+        assert main_array.shape == isolated_array.shape
+        assert main_array.dtype == isolated_array.dtype
+        assert (main_array.compute() == isolated_array.compute()).all()
+
+    # Data integrity check (sum all channels) on isolated dataset
     total_sum = sum(
-        data_array.sum().compute() for data_array in dataset.data_vars.values()
+        data_array.sum().compute() for data_array in isolated_dataset.data_vars.values()
     )
     assert total_sum == expected_sum
-
-
-def test_data_folder_parameter():
-    """Test that data_folder parameter allows specifying a custom data folder"""
-    companion_file_path = (
-        Path(__file__).parent
-        / "resources"
-        / "20250910_VV7-0-0-6-ScanSlide"
-        / "20250910_test4ch_2roi_3z_1_sg1.companion.ome"
-    )
-    data_folder = companion_file_path.parent
-    
-    # Create companion file with explicit data_folder
-    companion_file = CompanionFile(companion_file_path, data_folder=data_folder)
-    dataset = companion_file.get_dataset(image_index=6)
-    
-    _verify_dataset(dataset, expected_sum=9404845159)
-
-
-def test_data_folder_default_behavior():
-    """Test that data_folder defaults to companion file's parent directory"""
-    companion_file_path = (
-        Path(__file__).parent
-        / "resources"
-        / "20250910_VV7-0-0-6-ScanSlide"
-        / "20250910_test4ch_2roi_3z_1_sg1.companion.ome"
-    )
-    
-    # Create companion file without data_folder (default behavior)
-    companion_file = CompanionFile(companion_file_path)
-    dataset = companion_file.get_dataset(image_index=6)
-    
-    _verify_dataset(dataset, expected_sum=9404845159)
