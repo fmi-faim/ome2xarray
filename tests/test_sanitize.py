@@ -33,15 +33,15 @@ def test_sanitize_pixels_basic():
         pixels=pixels
     )
 
-    sanitized = sanitize_pixels(image, "dataset.companion.ome")
+    sanitized = sanitize_pixels(image)
 
     # Check counts
     assert len(sanitized.tiff_data_blocks) == 4  # 2 channels * 1 time * 2 z
     assert len(sanitized.planes) == 4
 
     # Check file names (no stage, no time suffix)
-    assert sanitized.tiff_data_blocks[0].uuid.file_name == "dataset_w1GFP.ome.tif"
-    assert sanitized.tiff_data_blocks[2].uuid.file_name == "dataset_w2RFP.ome.tif"
+    assert sanitized.tiff_data_blocks[0].uuid.file_name == "test_image_w1GFP.ome.tif"
+    assert sanitized.tiff_data_blocks[2].uuid.file_name == "test_image_w2RFP.ome.tif"
 
     # Check TiffData indices
     td0 = sanitized.tiff_data_blocks[0]
@@ -90,15 +90,15 @@ def test_sanitize_pixels_with_stage_label():
     # Stage label with position 4 (should give _s5)
     image = Image(
         id="Image:0",
-        name="test",
+        name="test_4:Position5:0",
         pixels=pixels,
         stage_label=StageLabel(name="4:Position5:0")
     )
 
-    sanitized = sanitize_pixels(image, "my_experiment.companion.ome")
+    sanitized = sanitize_pixels(image)
 
     assert len(sanitized.tiff_data_blocks) == 1
-    assert sanitized.tiff_data_blocks[0].uuid.file_name == "my_experiment_w1DAPI_s5.ome.tif"
+    assert sanitized.tiff_data_blocks[0].uuid.file_name == "test_w1DAPI_s5.ome.tif"
 
 
 def test_sanitize_pixels_with_multiple_timepoints():
@@ -125,12 +125,12 @@ def test_sanitize_pixels_with_multiple_timepoints():
         pixels=pixels
     )
 
-    sanitized = sanitize_pixels(image, "timelapse.companion.ome")
+    sanitized = sanitize_pixels(image)
 
     assert len(sanitized.tiff_data_blocks) == 3  # 1 channel * 3 times * 1 z
-    assert sanitized.tiff_data_blocks[0].uuid.file_name == "timelapse_w1Brightfield_t1.ome.tif"
-    assert sanitized.tiff_data_blocks[1].uuid.file_name == "timelapse_w1Brightfield_t2.ome.tif"
-    assert sanitized.tiff_data_blocks[2].uuid.file_name == "timelapse_w1Brightfield_t3.ome.tif"
+    assert sanitized.tiff_data_blocks[0].uuid.file_name == "test_w1Brightfield_t1.ome.tif"
+    assert sanitized.tiff_data_blocks[1].uuid.file_name == "test_w1Brightfield_t2.ome.tif"
+    assert sanitized.tiff_data_blocks[2].uuid.file_name == "test_w1Brightfield_t3.ome.tif"
     
     # Assert planes exist and have correct time positions
     assert len(sanitized.planes) == 3
@@ -160,17 +160,17 @@ def test_sanitize_pixels_with_stage_and_time():
 
     image = Image(
         id="Image:0",
-        name="test",
+        name="test_2:Pos3:1",
         pixels=pixels,
         stage_label=StageLabel(name="2:Pos3:1")
     )
 
-    sanitized = sanitize_pixels(image, "complex.companion.ome")
+    sanitized = sanitize_pixels(image)
 
     assert len(sanitized.tiff_data_blocks) == 4  # 1 channel * 2 times * 2 z
     # Should have both stage and time suffixes
-    assert sanitized.tiff_data_blocks[0].uuid.file_name == "complex_w1CFP_s3_t1.ome.tif"
-    assert sanitized.tiff_data_blocks[2].uuid.file_name == "complex_w1CFP_s3_t2.ome.tif"
+    assert sanitized.tiff_data_blocks[0].uuid.file_name == "test_w1CFP_s3_t1.ome.tif"
+    assert sanitized.tiff_data_blocks[2].uuid.file_name == "test_w1CFP_s3_t2.ome.tif"
 
 
 def test_sanitize_pixels_preserves_position_units():
@@ -200,7 +200,7 @@ def test_sanitize_pixels_preserves_position_units():
     )
 
     image = Image(id="Image:0", name="test", pixels=pixels)
-    sanitized = sanitize_pixels(image, "test.companion.ome")
+    sanitized = sanitize_pixels(image)
 
     plane = sanitized.planes[0]
     assert plane.position_x_unit == UnitsLength.MICROMETER
@@ -225,7 +225,7 @@ def test_sanitize_pixels_no_planes():
     )
 
     image = Image(id="Image:0", name="test", pixels=pixels)
-    sanitized = sanitize_pixels(image, "test.companion.ome")
+    sanitized = sanitize_pixels(image)
 
     # Should still generate planes, but without position information
     assert len(sanitized.planes) == 2
@@ -262,8 +262,11 @@ def test_companion_file_sanitize_image():
     assert len(sanitized_pixels.planes) == original_planes
 
     # Check that file names follow the expected pattern
+    # Image name is "20250910_Test4ch_2ROI_3Z_1_0:Number1_sg:0"
+    # Stage label is "0:Number1_sg:0"
+    # So basename should be "20250910_Test4ch_2ROI_3Z_1"
     first_block = sanitized_pixels.tiff_data_blocks[0]
-    assert first_block.uuid.file_name.startswith("20250910_test4ch_2roi_3z_1_sg1_w1")
+    assert first_block.uuid.file_name.startswith("20250910_Test4ch_2ROI_3Z_1_w1")
 
 
 def test_companion_file_sanitize_image_invalid_index():
@@ -303,7 +306,43 @@ def test_sanitize_pixels_channel_without_name():
     )
 
     image = Image(id="Image:0", name="test", pixels=pixels)
-    sanitized = sanitize_pixels(image, "test.companion.ome")
+    sanitized = sanitize_pixels(image)
 
     # Should generate a default channel name
     assert sanitized.tiff_data_blocks[0].uuid.file_name == "test_w1Channel0.ome.tif"
+
+
+def test_sanitize_pixels_removes_stage_label_from_image_name():
+    """Test that stage label is removed from image.name to form basename."""
+    pixels = Pixels(
+        id="Pixels:0",
+        dimension_order="XYZCT",
+        type="uint16",
+        size_x=512,
+        size_y=512,
+        size_z=1,
+        size_c=1,
+        size_t=1,
+        channels=[Channel(id="Channel:0", name="DAPI")],
+        tiff_data_blocks=[],
+        planes=[
+            Plane(the_c=0, the_t=0, the_z=0, position_x=0.0, position_y=0.0, position_z=10.0),
+        ]
+    )
+
+    # Example from the issue:
+    # image.name: "20260109_SWI_3501_eft_col1_19:eft_20_sg:0"
+    # stage_label.name: "19:eft_20_sg:0"
+    # Expected basename: "20260109_SWI_3501_eft_col1"
+    image = Image(
+        id="Image:0",
+        name="20260109_SWI_3501_eft_col1_19:eft_20_sg:0",
+        pixels=pixels,
+        stage_label=StageLabel(name="19:eft_20_sg:0")
+    )
+
+    sanitized = sanitize_pixels(image)
+
+    assert len(sanitized.tiff_data_blocks) == 1
+    # Should use basename without stage label
+    assert sanitized.tiff_data_blocks[0].uuid.file_name == "20260109_SWI_3501_eft_col1_w1DAPI_s20.ome.tif"
