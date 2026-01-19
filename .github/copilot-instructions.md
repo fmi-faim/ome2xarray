@@ -38,10 +38,10 @@ ome2xarray/
 
 ### CompanionFile Class
 The main class for working with OME companion files:
-- `__init__(path, data_folder=None)`: Initialize with a companion.ome file path
-- `get_dataset(image_index)`: Get an xarray Dataset for a specific image index
-- `get_datatree()`: Get an xarray DataTree containing all images
-- `get_ome_metadata()`: Get the raw OME metadata object
+- `__init__(path: Path, data_folder: Path | None = None) -> None`: Initialize with a companion.ome file path
+- `get_dataset(image_index: int) -> xr.Dataset`: Get an xarray Dataset for a specific image index
+- `get_datatree() -> xr.DataTree`: Get an xarray DataTree containing all images
+- `get_ome_metadata() -> OME`: Get the raw OME metadata object
 
 ### Data Structure
 - Datasets use dimensions: `(t, z, y, x)` for time, z-position, y-axis, and x-axis
