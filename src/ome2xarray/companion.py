@@ -2,6 +2,7 @@ from dask import delayed
 from pathlib import Path
 from ome_types import from_xml, OME
 from ome_types.model import Image, Pixels, TiffData, Plane
+from uuid import uuid4
 
 import dask.array as da
 import numpy as np
@@ -41,7 +42,7 @@ def sanitize_pixels(image: Image, companion_file_name: str) -> Pixels:
     # Extract stage position number from stage_label if present
     stage_suffix = ""
     if image.stage_label and image.stage_label.name:
-        # Parse stage_label.name like "0:Number1_sg:0" or "4:eft_5_sg:0"
+        # Parse stage_label.name like "0:Number1_sg:0" or "4:Position5:0"
         # Extract the first number after splitting by ":"
         parts = image.stage_label.name.split(':')
         if parts:
@@ -78,6 +79,9 @@ def sanitize_pixels(image: Image, companion_file_name: str) -> Pixels:
     new_tiff_data_blocks = []
     new_planes = []
     
+    # Track UUIDs per file name to ensure consistency
+    file_uuids = {}
+    
     for c in range(pixels.size_c):
         channel = pixels.channels[c]
         channel_name = channel.name or f"Channel{c}"
@@ -91,6 +95,10 @@ def sanitize_pixels(image: Image, companion_file_name: str) -> Pixels:
             time_suffix = f"_t{t+1}" if pixels.size_t > 1 else ""
             file_name = f"{file_base}{time_suffix}.ome.tif"
             
+            # Generate a unique UUID for this file if not already done
+            if file_name not in file_uuids:
+                file_uuids[file_name] = f"urn:uuid:{uuid4()}"
+            
             for z in range(pixels.size_z):
                 # Create TiffData block
                 tiff_data = TiffData(
@@ -101,7 +109,7 @@ def sanitize_pixels(image: Image, companion_file_name: str) -> Pixels:
                     plane_count=1,
                     uuid=TiffData.UUID(
                         file_name=file_name,
-                        value="urn:uuid:00000000-0000-0000-0000-000000000000"  # Placeholder UUID
+                        value=file_uuids[file_name]
                     )
                 )
                 new_tiff_data_blocks.append(tiff_data)
