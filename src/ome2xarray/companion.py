@@ -12,11 +12,11 @@ import xarray as xr
 
 class CompanionFile:
     _ome: OME
-    _parent_path: Path
+    _data_folder: Path
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, data_folder: Path | None = None):
         with open(path, "r", encoding="utf8") as file:
-            self._parent_path = path.parent
+            self._data_folder = data_folder if data_folder is not None else path.parent
             self._ome = from_xml(file.read())
 
     def get_dataset(self, image_index: int) -> xr.Dataset:
@@ -39,7 +39,7 @@ class CompanionFile:
             )
         return _create_channel_dataset(
             image=self._ome.images[image_index],
-            base_path=self._parent_path,
+            base_path=self._data_folder,
         )
 
     def get_datatree(self) -> xr.DataTree:

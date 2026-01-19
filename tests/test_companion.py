@@ -137,3 +137,38 @@ def test_z_positions_n2_lin28a633():
         f"Expected: {expected_z[:3]}...{expected_z[-3:]}, "
         f"Got: {z_coords[:3]}...{z_coords[-3:]}"
     )
+
+
+@pytest.mark.parametrize(
+    "companion_file_name,image_index,expected_sum",
+    [
+        ("20250910_test4ch_2roi_3z_1_sg1.companion.ome", 6, 9404845159),
+    ],
+)
+def test_isolated_companion_file(
+    companion_file_name, image_index, expected_sum
+):
+    folder = Path(__file__).parent / "resources" / "20250910_VV7-0-0-6-ScanSlide"
+
+    main_companion_path = folder / companion_file_name
+    isolated_companion_path = folder / "isolated" / companion_file_name
+
+    main_companion = CompanionFile(main_companion_path)
+    isolated_companion = CompanionFile(isolated_companion_path, data_folder=folder)
+
+    main_dataset = main_companion.get_dataset(image_index=image_index)
+    isolated_dataset = isolated_companion.get_dataset(image_index=image_index)
+
+    # Check that datasets are identical
+    for ch_name in main_dataset.data_vars:
+        main_array = main_dataset[ch_name]
+        isolated_array = isolated_dataset[ch_name]
+        assert main_array.shape == isolated_array.shape
+        assert main_array.dtype == isolated_array.dtype
+        assert (main_array.compute() == isolated_array.compute()).all()
+
+    # Data integrity check (sum all channels) on isolated dataset
+    total_sum = sum(
+        data_array.sum().compute() for data_array in isolated_dataset.data_vars.values()
+    )
+    assert total_sum == expected_sum
