@@ -35,9 +35,7 @@ def sanitize_pixels(image: Image, companion_file_name: str) -> Pixels:
     pixels = image.pixels
     
     # Extract base name from companion file (remove .companion.ome extension)
-    base_name = companion_file_name
-    if base_name.endswith('.companion.ome'):
-        base_name = base_name[:-14]  # Remove '.companion.ome'
+    base_name = Path(companion_file_name).name.removesuffix('.companion.ome')
     
     # Extract stage position number from stage_label if present
     stage_suffix = ""
@@ -45,12 +43,11 @@ def sanitize_pixels(image: Image, companion_file_name: str) -> Pixels:
         # Parse stage_label.name like "0:Number1_sg:0" or "4:Position5:0"
         # Extract the first number after splitting by ":"
         parts = image.stage_label.name.split(':')
-        if parts:
-            try:
-                stage_pos = int(parts[0])
-                stage_suffix = f"_s{stage_pos + 1}"
-            except (ValueError, IndexError):
-                pass
+        try:
+            stage_pos = int(parts[0])
+            stage_suffix = f"_s{stage_pos + 1}"
+        except (ValueError, IndexError):
+            pass
     
     # Collect position information from existing planes if available
     # We'll use the first plane's position as a template

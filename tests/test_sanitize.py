@@ -131,6 +131,12 @@ def test_sanitize_pixels_with_multiple_timepoints():
     assert sanitized.tiff_data_blocks[0].uuid.file_name == "timelapse_w1Brightfield_t1.ome.tif"
     assert sanitized.tiff_data_blocks[1].uuid.file_name == "timelapse_w1Brightfield_t2.ome.tif"
     assert sanitized.tiff_data_blocks[2].uuid.file_name == "timelapse_w1Brightfield_t3.ome.tif"
+    
+    # Assert planes exist and have correct time positions
+    assert len(sanitized.planes) == 3
+    assert sanitized.planes[0].the_t == 0
+    assert sanitized.planes[1].the_t == 1
+    assert sanitized.planes[2].the_t == 2
 
 
 def test_sanitize_pixels_with_stage_and_time():
