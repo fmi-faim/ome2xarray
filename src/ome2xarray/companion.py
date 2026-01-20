@@ -11,7 +11,7 @@ import warnings
 import xarray as xr
 
 
-def sanitize_pixels(image: Image, include_sg: bool = False) -> Pixels:
+def sanitize_pixels(image: Image, include_sg: bool = False, channel_list: list[str] | None = None) -> Pixels:
     """
     Sanitize incomplete/corrupted pixels by regenerating tiff_data_blocks and planes.
     
@@ -27,6 +27,10 @@ def sanitize_pixels(image: Image, include_sg: bool = False) -> Pixels:
     include_sg : bool, optional
         If True, include stage group suffix (_sg1, _sg2, etc.) in file names.
         Default is False.
+    channel_list : list[str] | None, optional
+        List of channel names in the correct order. If provided, this list will be
+        used instead of pixels.channels to determine channel names. The length must
+        match pixels.size_c. Default is None (use pixels.channels).
         
     Returns:
     --------
@@ -34,6 +38,14 @@ def sanitize_pixels(image: Image, include_sg: bool = False) -> Pixels:
         A copy of the pixels object with regenerated tiff_data_blocks and planes
     """
     pixels = image.pixels
+    
+    # Validate channel_list if provided
+    if channel_list is not None:
+        if len(channel_list) != pixels.size_c:
+            raise ValueError(
+                f"channel_list length ({len(channel_list)}) does not match "
+                f"pixels.size_c ({pixels.size_c})"
+            )
     
     # Extract base name from image.name by removing stage_label suffix
     base_name = image.name
@@ -98,8 +110,12 @@ def sanitize_pixels(image: Image, include_sg: bool = False) -> Pixels:
     file_uuids = {}
     
     for c in range(pixels.size_c):
-        channel = pixels.channels[c]
-        channel_name = channel.name or f"Channel{c}"
+        # Get channel name from channel_list if provided, otherwise from pixels.channels
+        if channel_list is not None:
+            channel_name = channel_list[c]
+        else:
+            channel = pixels.channels[c]
+            channel_name = channel.name or f"Channel{c}"
         
         # Generate file name for this channel
         # Format: {base_name}_w{c+1}{channel_name}{sg_suffix}{stage_suffix}{time_suffix}.ome.tif
@@ -213,7 +229,7 @@ class CompanionFile:
         """
         return self._ome
 
-    def sanitize_image(self, image_index: int, include_sg: bool = False) -> None:
+    def sanitize_image(self, image_index: int, include_sg: bool = False, channel_list: list[str] | None = None) -> None:
         """
         Sanitize an image's pixels by regenerating tiff_data_blocks and planes.
         
@@ -227,6 +243,10 @@ class CompanionFile:
         include_sg : bool, optional
             If True, include stage group suffix (_sg1, _sg2, etc.) in file names.
             Default is False.
+        channel_list : list[str] | None, optional
+            List of channel names in the correct order. If provided, this list will be
+            used instead of pixels.channels to determine channel names. The length must
+            match pixels.size_c. Default is None (use pixels.channels).
         """
         if image_index < 0 or image_index >= len(self._ome.images):
             raise IndexError(
@@ -236,7 +256,7 @@ class CompanionFile:
         image = self._ome.images[image_index]
         
         # Sanitize the pixels
-        sanitized_pixels = sanitize_pixels(image, include_sg=include_sg)
+        sanitized_pixels = sanitize_pixels(image, include_sg=include_sg, channel_list=channel_list)
         
         # Replace the image's pixels with sanitized version
         # We need to create a new image with the sanitized pixels
