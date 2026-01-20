@@ -59,18 +59,13 @@ def sanitize_pixels(image: Image, include_sg: bool = False) -> Pixels:
         # Extract stage group if include_sg is True
         if include_sg:
             # Split by last underscore to get the sg part
-            # Example: "0:Number1_sg:0" -> ["0:Number1", "sg:0"]
+            # Example: "0:Number_1_sg:0" -> ["0:Number_1", "sg:0"]
             underscore_parts = image.stage_label.name.rsplit('_', 1)
-            if len(underscore_parts) == 2:
-                # Split by ':' to get the stage group index
-                # Example: "sg:0" -> ["sg", "0"]
-                sg_parts = underscore_parts[1].split(':')
-                if len(sg_parts) == 2 and sg_parts[0] == 'sg':
-                    try:
-                        sg_index = int(sg_parts[1])
-                        sg_suffix = f"_sg{sg_index + 1}"
-                    except ValueError:
-                        pass
+            # Split by ':' to get the stage group index
+            # Example: "sg:0" -> ["sg", "0"]
+            sg_parts = underscore_parts[1].split(':')
+            sg_index = int(sg_parts[1])
+            sg_suffix = f"_sg{sg_index + 1}"
     
     # Collect position information from existing planes if available
     # We'll use the first plane's position as a template
