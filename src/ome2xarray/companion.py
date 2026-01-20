@@ -11,7 +11,7 @@ import warnings
 import xarray as xr
 
 
-def sanitize_pixels(image: Image) -> Pixels:
+def sanitize_pixels(image: Image, include_sg: bool = False) -> Pixels:
     """
     Sanitize incomplete/corrupted pixels by regenerating tiff_data_blocks and planes.
     
@@ -24,6 +24,9 @@ def sanitize_pixels(image: Image) -> Pixels:
     -----------
     image : Image
         The OME Image object containing pixels to sanitize
+    include_sg : bool, optional
+        If True, include stage group suffix (_sg1, _sg2, etc.) in file names.
+        Default is False.
         
     Returns:
     --------
@@ -42,6 +45,7 @@ def sanitize_pixels(image: Image) -> Pixels:
     
     # Extract stage position number from stage_label if present
     stage_suffix = ""
+    sg_suffix = ""
     if image.stage_label and image.stage_label.name:
         # Parse stage_label.name like "0:Number1_sg:0" or "4:Position5:0"
         # Extract the first number after splitting by ":"
@@ -51,6 +55,17 @@ def sanitize_pixels(image: Image) -> Pixels:
             stage_suffix = f"_s{stage_pos + 1}"
         except (ValueError, IndexError):
             pass
+        
+        # Extract stage group if include_sg is True
+        if include_sg:
+            # Split by last underscore to get the sg part
+            # Example: "0:Number_1_sg:0" -> ["0:Number_1", "sg:0"]
+            underscore_parts = image.stage_label.name.rsplit('_', 1)
+            # Split by ':' to get the stage group index
+            # Example: "sg:0" -> ["sg", "0"]
+            sg_parts = underscore_parts[1].split(':')
+            sg_index = int(sg_parts[1])
+            sg_suffix = f"_sg{sg_index + 1}"
     
     # Collect position information from existing planes if available
     # We'll use the first plane's position as a template
@@ -87,8 +102,8 @@ def sanitize_pixels(image: Image) -> Pixels:
         channel_name = channel.name or f"Channel{c}"
         
         # Generate file name for this channel
-        # Format: {base_name}_w{c+1}{channel_name}{stage_suffix}{time_suffix}.ome.tif
-        file_base = f"{base_name}_w{c+1}{channel_name}{stage_suffix}"
+        # Format: {base_name}_w{c+1}{channel_name}{sg_suffix}{stage_suffix}{time_suffix}.ome.tif
+        file_base = f"{base_name}_w{c+1}{channel_name}{sg_suffix}{stage_suffix}"
         
         for t in range(pixels.size_t):
             # Add time suffix only if there are multiple timepoints
@@ -198,7 +213,7 @@ class CompanionFile:
         """
         return self._ome
 
-    def sanitize_image(self, image_index: int) -> None:
+    def sanitize_image(self, image_index: int, include_sg: bool = False) -> None:
         """
         Sanitize an image's pixels by regenerating tiff_data_blocks and planes.
         
@@ -209,6 +224,9 @@ class CompanionFile:
         -----------
         image_index : int
             Index of the image to sanitize
+        include_sg : bool, optional
+            If True, include stage group suffix (_sg1, _sg2, etc.) in file names.
+            Default is False.
         """
         if image_index < 0 or image_index >= len(self._ome.images):
             raise IndexError(
@@ -218,7 +236,7 @@ class CompanionFile:
         image = self._ome.images[image_index]
         
         # Sanitize the pixels
-        sanitized_pixels = sanitize_pixels(image)
+        sanitized_pixels = sanitize_pixels(image, include_sg=include_sg)
         
         # Replace the image's pixels with sanitized version
         # We need to create a new image with the sanitized pixels

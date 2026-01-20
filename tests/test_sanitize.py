@@ -346,3 +346,129 @@ def test_sanitize_pixels_removes_stage_label_from_image_name():
     assert len(sanitized.tiff_data_blocks) == 1
     # Should use basename without stage label
     assert sanitized.tiff_data_blocks[0].uuid.file_name == "20260109_SWI_3501_eft_col1_w1DAPI_s20.ome.tif"
+
+
+def test_sanitize_pixels_with_include_sg():
+    """Test that include_sg=True adds _sg suffix at the right position."""
+    pixels = Pixels(
+        id="Pixels:0",
+        dimension_order="XYZCT",
+        type="uint16",
+        size_x=512,
+        size_y=512,
+        size_z=1,
+        size_c=1,
+        size_t=1,
+        channels=[Channel(id="Channel:0", name="DAPI")],
+        tiff_data_blocks=[],
+        planes=[
+            Plane(the_c=0, the_t=0, the_z=0, position_x=0.0, position_y=0.0, position_z=10.0),
+        ]
+    )
+
+    image = Image(
+        id="Image:0",
+        name="test_0:Number1_sg:0",
+        pixels=pixels,
+        stage_label=StageLabel(name="0:Number1_sg:0")
+    )
+
+    sanitized = sanitize_pixels(image, include_sg=True)
+    assert len(sanitized.tiff_data_blocks) == 1
+    # Should include _sg1 after channel and before stage position
+    assert sanitized.tiff_data_blocks[0].uuid.file_name == "test_w1DAPI_sg1_s1.ome.tif"
+
+
+def test_companion_file_filenames_with_and_without_sanitize_sg1():
+    """Test that filenames match between original and sanitized (with include_sg=True) for sg1 dataset."""
+    companion_file_path = (
+        Path(__file__).parent
+        / "resources"
+        / "20250910_VV7-0-0-6-ScanSlide"
+        / "20250910_test4ch_2roi_3z_1_sg1.companion.ome"
+    )
+
+    companion_file = CompanionFile(companion_file_path)
+    metadata = companion_file.get_ome_metadata()
+    
+    # Get the first image
+    original_image = metadata.images[0]
+    original_filenames = {block.uuid.file_name for block in original_image.pixels.tiff_data_blocks}
+    
+    # Sanitize with include_sg=True
+    companion_file.sanitize_image(0, include_sg=True)
+    sanitized_metadata = companion_file.get_ome_metadata()
+    sanitized_image = sanitized_metadata.images[0]
+    sanitized_filenames = {block.uuid.file_name for block in sanitized_image.pixels.tiff_data_blocks}
+    
+    # The filenames should match
+    assert original_filenames == sanitized_filenames, (
+        f"Filenames don't match.\n"
+        f"Original: {sorted(original_filenames)}\n"
+        f"Sanitized: {sorted(sanitized_filenames)}"
+    )
+
+
+def test_companion_file_filenames_with_and_without_sanitize_sg2():
+    """Test that filenames match between original and sanitized (with include_sg=True) for sg2 dataset."""
+    companion_file_path = (
+        Path(__file__).parent
+        / "resources"
+        / "20250910_VV7-0-0-6-ScanSlide"
+        / "20250910_test4ch_2roi_3z_1_sg2.companion.ome"
+    )
+
+    companion_file = CompanionFile(companion_file_path)
+    metadata = companion_file.get_ome_metadata()
+    
+    # Get the first image
+    original_image = metadata.images[0]
+    original_filenames = {block.uuid.file_name for block in original_image.pixels.tiff_data_blocks}
+    
+    # Sanitize with include_sg=True
+    companion_file.sanitize_image(0, include_sg=True)
+    sanitized_metadata = companion_file.get_ome_metadata()
+    sanitized_image = sanitized_metadata.images[0]
+    sanitized_filenames = {block.uuid.file_name for block in sanitized_image.pixels.tiff_data_blocks}
+    
+    # The filenames should match
+    assert original_filenames == sanitized_filenames, (
+        f"Filenames don't match.\n"
+        f"Original: {sorted(original_filenames)}\n"
+        f"Sanitized: {sorted(sanitized_filenames)}"
+    )
+
+
+def test_companion_file_filenames_without_include_sg():
+    """Test that filenames are different when sanitizing without include_sg for sg1/sg2 datasets."""
+    companion_file_path = (
+        Path(__file__).parent
+        / "resources"
+        / "20250910_VV7-0-0-6-ScanSlide"
+        / "20250910_test4ch_2roi_3z_1_sg1.companion.ome"
+    )
+
+    companion_file = CompanionFile(companion_file_path)
+    metadata = companion_file.get_ome_metadata()
+    
+    # Get the first image
+    original_image = metadata.images[0]
+    original_filenames = {block.uuid.file_name for block in original_image.pixels.tiff_data_blocks}
+    
+    # Sanitize without include_sg (default behavior)
+    companion_file.sanitize_image(0, include_sg=False)
+    sanitized_metadata = companion_file.get_ome_metadata()
+    sanitized_image = sanitized_metadata.images[0]
+    sanitized_filenames = {block.uuid.file_name for block in sanitized_image.pixels.tiff_data_blocks}
+    
+    # The filenames should NOT match (original has _sg1, sanitized without include_sg doesn't)
+    assert original_filenames != sanitized_filenames, (
+        "Filenames should be different when include_sg=False"
+    )
+    
+    # Verify that original has _sg1 and sanitized doesn't
+    for orig_fn in original_filenames:
+        assert "_sg1_" in orig_fn, f"Original filename should contain _sg1_: {orig_fn}"
+    
+    for san_fn in sanitized_filenames:
+        assert "_sg" not in san_fn, f"Sanitized filename should not contain _sg: {san_fn}"
