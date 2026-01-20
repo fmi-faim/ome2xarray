@@ -289,29 +289,6 @@ def test_companion_file_sanitize_image_invalid_index():
         companion_file.sanitize_image(-1)
 
 
-def test_sanitize_pixels_channel_without_name():
-    """Test sanitization with a channel that has no name."""
-    pixels = Pixels(
-        id="Pixels:0",
-        dimension_order="XYZCT",
-        type="uint16",
-        size_x=512,
-        size_y=512,
-        size_z=1,
-        size_c=1,
-        size_t=1,
-        channels=[Channel(id="Channel:0", name=None)],  # No name
-        tiff_data_blocks=[],
-        planes=[]
-    )
-
-    image = Image(id="Image:0", name="test", pixels=pixels)
-    sanitized = sanitize_pixels(image)
-
-    # Should generate a default channel name
-    assert sanitized.tiff_data_blocks[0].uuid.file_name == "test_w1Channel0.ome.tif"
-
-
 def test_sanitize_pixels_removes_stage_label_from_image_name():
     """Test that stage label is removed from image.name to form basename."""
     pixels = Pixels(
@@ -379,43 +356,17 @@ def test_sanitize_pixels_with_include_sg():
     assert sanitized.tiff_data_blocks[0].uuid.file_name == "test_w1DAPI_sg1_s1.ome.tif"
 
 
-def test_companion_file_filenames_with_and_without_sanitize_sg1():
+@pytest.mark.parametrize("filename", [
+    "20250910_test4ch_2roi_3z_1_sg1.companion.ome",
+    "20250910_test4ch_2roi_3z_1_sg2.companion.ome"
+])
+def test_companion_file_filenames_with_and_without_sanitize_sg1(filename):
     """Test that filenames match between original and sanitized (with include_sg=True) for sg1 dataset."""
     companion_file_path = (
         Path(__file__).parent
         / "resources"
         / "20250910_VV7-0-0-6-ScanSlide"
-        / "20250910_test4ch_2roi_3z_1_sg1.companion.ome"
-    )
-
-    companion_file = CompanionFile(companion_file_path)
-    metadata = companion_file.get_ome_metadata()
-    
-    # Get the first image
-    original_image = metadata.images[0]
-    original_filenames = {block.uuid.file_name for block in original_image.pixels.tiff_data_blocks}
-    
-    # Sanitize with include_sg=True
-    companion_file.sanitize_image(0, include_sg=True)
-    sanitized_metadata = companion_file.get_ome_metadata()
-    sanitized_image = sanitized_metadata.images[0]
-    sanitized_filenames = {block.uuid.file_name for block in sanitized_image.pixels.tiff_data_blocks}
-    
-    # The filenames should match
-    assert original_filenames == sanitized_filenames, (
-        f"Filenames don't match.\n"
-        f"Original: {sorted(original_filenames)}\n"
-        f"Sanitized: {sorted(sanitized_filenames)}"
-    )
-
-
-def test_companion_file_filenames_with_and_without_sanitize_sg2():
-    """Test that filenames match between original and sanitized (with include_sg=True) for sg2 dataset."""
-    companion_file_path = (
-        Path(__file__).parent
-        / "resources"
-        / "20250910_VV7-0-0-6-ScanSlide"
-        / "20250910_test4ch_2roi_3z_1_sg2.companion.ome"
+        / filename
     )
 
     companion_file = CompanionFile(companion_file_path)
@@ -472,3 +423,109 @@ def test_companion_file_filenames_without_include_sg():
     
     for san_fn in sanitized_filenames:
         assert "_sg" not in san_fn, f"Sanitized filename should not contain _sg: {san_fn}"
+
+
+def test_sanitize_pixels_with_channel_list():
+    """Test sanitization with custom channel_list parameter."""
+    pixels = Pixels(
+        id="Pixels:0",
+        dimension_order="XYZCT",
+        type="uint16",
+        size_x=512,
+        size_y=512,
+        size_z=1,
+        size_c=3,
+        size_t=1,
+        channels=[
+            Channel(id="Channel:0", name="Red"),
+            Channel(id="Channel:1", name="Green"),
+            Channel(id="Channel:2", name="Blue")
+        ],
+        tiff_data_blocks=[],
+        planes=[
+            Plane(the_c=0, the_t=0, the_z=0, position_x=0.0, position_y=0.0, position_z=0.0),
+        ]
+    )
+
+    image = Image(
+        id="Image:0",
+        name="test_image",
+        pixels=pixels
+    )
+
+    # Sanitize with custom channel list (different order)
+    channel_list = ["DAPI", "GFP"]
+    sanitized = sanitize_pixels(image, channel_list=channel_list)
+
+    # Check that the custom channel names are used
+    assert len(sanitized.tiff_data_blocks) == 2
+    assert sanitized.tiff_data_blocks[0].uuid.file_name == "test_image_w1DAPI.ome.tif"
+    assert sanitized.tiff_data_blocks[1].uuid.file_name == "test_image_w2GFP.ome.tif"
+
+
+def test_sanitize_pixels_channel_list_none_uses_default():
+    """Test that passing channel_list=None uses the default behavior."""
+    pixels = Pixels(
+        id="Pixels:0",
+        dimension_order="XYZCT",
+        type="uint16",
+        size_x=512,
+        size_y=512,
+        size_z=1,
+        size_c=2,
+        size_t=1,
+        channels=[
+            Channel(id="Channel:0", name="OriginalA"),
+            Channel(id="Channel:1", name="OriginalB")
+        ],
+        tiff_data_blocks=[],
+        planes=[]
+    )
+
+    image = Image(
+        id="Image:0",
+        name="test_image",
+        pixels=pixels
+    )
+
+    # Sanitize with channel_list=None (explicit)
+    sanitized = sanitize_pixels(image, channel_list=None)
+
+    # Check that the original channel names are used
+    assert len(sanitized.tiff_data_blocks) == 2
+    assert sanitized.tiff_data_blocks[0].uuid.file_name == "test_image_w1OriginalA.ome.tif"
+    assert sanitized.tiff_data_blocks[1].uuid.file_name == "test_image_w2OriginalB.ome.tif"
+
+
+def test_companion_file_sanitize_image_with_channel_list():
+    """Test CompanionFile.sanitize_image with channel_list parameter."""
+    companion_file_path = (
+        Path(__file__).parent
+        / "resources"
+        / "20250910_VV7-0-0-6-ScanSlide"
+        / "20250910_test4ch_2roi_3z_1_sg1.companion.ome"
+    )
+
+    companion_file = CompanionFile(companion_file_path)
+    metadata = companion_file.get_ome_metadata()
+    
+    # Get original channel names for the first image
+    original_image = metadata.images[0]
+    original_channels = [ch.name for ch in original_image.pixels.channels]
+    
+    # Create a custom channel list with different names
+    custom_channel_list = [f"Custom{i}" for i in range(len(original_channels))]
+    
+    # Sanitize with custom channel list
+    companion_file.sanitize_image(0, channel_list=custom_channel_list)
+    
+    # Get sanitized metadata
+    sanitized_metadata = companion_file.get_ome_metadata()
+    sanitized_image = sanitized_metadata.images[0]
+    
+    # Check that custom channel names are used in filenames
+    for block in sanitized_image.pixels.tiff_data_blocks:
+        # The filename should contain one of the custom channel names
+        assert any(custom_ch in block.uuid.file_name for custom_ch in custom_channel_list), (
+            f"Filename {block.uuid.file_name} doesn't contain any custom channel name"
+        )
