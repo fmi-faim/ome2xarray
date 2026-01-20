@@ -11,7 +11,7 @@ import warnings
 import xarray as xr
 
 
-def sanitize_pixels(image: Image, include_sg: bool = False, channel_list: list[str] | None = None) -> Pixels:
+def sanitize_pixels(image: Image, *, include_sg: bool = False, channel_list: list[str] | None = None) -> Pixels:
     """
     Sanitize incomplete/corrupted pixels by regenerating tiff_data_blocks and planes.
     
@@ -29,8 +29,8 @@ def sanitize_pixels(image: Image, include_sg: bool = False, channel_list: list[s
         Default is False.
     channel_list : list[str] | None, optional
         List of channel names in the correct order. If provided, this list will be
-        used instead of pixels.channels to determine channel names. The length must
-        match pixels.size_c. Default is None (use pixels.channels).
+        used instead of pixels.channels to determine channel names.
+        Default is None (use pixels.channels).
         
     Returns:
     --------
@@ -38,14 +38,6 @@ def sanitize_pixels(image: Image, include_sg: bool = False, channel_list: list[s
         A copy of the pixels object with regenerated tiff_data_blocks and planes
     """
     pixels = image.pixels
-    
-    # Validate channel_list if provided
-    if channel_list is not None:
-        if len(channel_list) != pixels.size_c:
-            raise ValueError(
-                f"channel_list length ({len(channel_list)}) does not match "
-                f"pixels.size_c ({pixels.size_c})"
-            )
     
     # Extract base name from image.name by removing stage_label suffix
     base_name = image.name
@@ -62,11 +54,8 @@ def sanitize_pixels(image: Image, include_sg: bool = False, channel_list: list[s
         # Parse stage_label.name like "0:Number1_sg:0" or "4:Position5:0"
         # Extract the first number after splitting by ":"
         parts = image.stage_label.name.split(':')
-        try:
-            stage_pos = int(parts[0])
-            stage_suffix = f"_s{stage_pos + 1}"
-        except (ValueError, IndexError):
-            pass
+        stage_pos = int(parts[0])
+        stage_suffix = f"_s{stage_pos + 1}"
         
         # Extract stage group if include_sg is True
         if include_sg:
@@ -108,28 +97,24 @@ def sanitize_pixels(image: Image, include_sg: bool = False, channel_list: list[s
     
     # Track UUIDs per file name to ensure consistency
     file_uuids = {}
-    
-    for c in range(pixels.size_c):
-        # Get channel name from channel_list if provided, otherwise from pixels.channels
-        if channel_list is not None:
-            channel_name = channel_list[c]
-        else:
-            channel = pixels.channels[c]
-            channel_name = channel.name or f"Channel{c}"
-        
+
+    if channel_list is None:
+        channel_list = [channel.name for channel in pixels.channels]
+
+    for c, channel_name in enumerate(channel_list):
         # Generate file name for this channel
         # Format: {base_name}_w{c+1}{channel_name}{sg_suffix}{stage_suffix}{time_suffix}.ome.tif
         file_base = f"{base_name}_w{c+1}{channel_name}{sg_suffix}{stage_suffix}"
-        
+
         for t in range(pixels.size_t):
             # Add time suffix only if there are multiple timepoints
             time_suffix = f"_t{t+1}" if pixels.size_t > 1 else ""
             file_name = f"{file_base}{time_suffix}.ome.tif"
-            
+
             # Generate a unique UUID for this file if not already done
             if file_name not in file_uuids:
                 file_uuids[file_name] = f"urn:uuid:{uuid4()}"
-            
+
             for z in range(pixels.size_z):
                 # Create TiffData block
                 tiff_data = TiffData(
