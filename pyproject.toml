@@ -55,10 +55,10 @@ python = "3.14.*"
 jupyter = ">=1.1.1,<2"
 
 [tool.pixi.dependencies]
-xarray = ">=2025.9.0,<2026"
-dask = ">=2025.7.0,<2026"
+xarray = ">=2025.9.0"
+dask = ">=2025.7.0"
 ome-types = ">=0.6.1,<0.7"
-tifffile = ">=2024.12.12,<2026"
+tifffile = ">=2024.12.12"
 
 [dependency-groups]
 test = ["pytest", "pytest-cov"]
