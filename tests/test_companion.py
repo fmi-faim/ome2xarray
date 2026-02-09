@@ -119,19 +119,22 @@ def test_z_positions_n2_lin28a633():
     companion_file = CompanionFile(companion_file_path)
     with pytest.warns(UserWarning, match="Missing data: file"):
         dataset = companion_file.get_dataset(image_index=0)
-    
+
     # Expected z positions: 65.4 to 84.0 in steps of 0.3
     import numpy as np
+
     expected_z = np.arange(65.4, 84.0 + 0.01, 0.3)  # +0.01 to include 84.0
-    
+
     # Get z coordinates from dataset
     z_coords = dataset.coords["z"].values
-    
+
     # Get size_z from metadata
     metadata = companion_file.get_ome_metadata()
     size_z = metadata.images[0].pixels.size_z
-    
-    assert len(z_coords) == size_z, f"Expected {size_z} z positions, got {len(z_coords)}"
+
+    assert len(z_coords) == size_z, (
+        f"Expected {size_z} z positions, got {len(z_coords)}"
+    )
     assert np.allclose(z_coords, expected_z, atol=1e-6), (
         f"Z positions don't match expected range. "
         f"Expected: {expected_z[:3]}...{expected_z[-3:]}, "
@@ -145,9 +148,7 @@ def test_z_positions_n2_lin28a633():
         ("20250910_test4ch_2roi_3z_1_sg1.companion.ome", 6, 9404845159),
     ],
 )
-def test_isolated_companion_file(
-    companion_file_name, image_index, expected_sum
-):
+def test_isolated_companion_file(companion_file_name, image_index, expected_sum):
     folder = Path(__file__).parent / "resources" / "20250910_VV7-0-0-6-ScanSlide"
 
     main_companion_path = folder / companion_file_name

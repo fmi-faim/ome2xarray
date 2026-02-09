@@ -11,15 +11,17 @@ import warnings
 import xarray as xr
 
 
-def sanitize_pixels(image: Image, *, include_sg: bool = False, channel_list: list[str] | None = None) -> Pixels:
+def sanitize_pixels(
+    image: Image, *, include_sg: bool = False, channel_list: list[str] | None = None
+) -> Pixels:
     """
     Sanitize incomplete/corrupted pixels by regenerating tiff_data_blocks and planes.
-    
+
     This function generates:
     - TiffData blocks for each (c, t, z) combination
     - File names based on the image name, channel info, stage position, and timepoint
     - Plane objects with position information repeated from existing planes
-    
+
     Parameters:
     -----------
     image : Image
@@ -31,14 +33,14 @@ def sanitize_pixels(image: Image, *, include_sg: bool = False, channel_list: lis
         List of channel names in the correct order. If provided, this list will be
         used instead of pixels.channels to determine channel names.
         Default is None (use pixels.channels).
-        
+
     Returns:
     --------
     Pixels
         A copy of the pixels object with regenerated tiff_data_blocks and planes
     """
     pixels = image.pixels
-    
+
     # Extract base name from image.name by removing stage_label suffix
     base_name = image.name
     if image.stage_label and image.stage_label.name:
@@ -46,28 +48,28 @@ def sanitize_pixels(image: Image, *, include_sg: bool = False, channel_list: lis
         stage_label_suffix = f"_{image.stage_label.name}"
         if base_name.endswith(stage_label_suffix):
             base_name = base_name.removesuffix(stage_label_suffix)
-    
+
     # Extract stage position number from stage_label if present
     stage_suffix = ""
     sg_suffix = ""
     if image.stage_label and image.stage_label.name:
         # Parse stage_label.name like "0:Number1_sg:0" or "4:Position5:0"
         # Extract the first number after splitting by ":"
-        parts = image.stage_label.name.split(':')
+        parts = image.stage_label.name.split(":")
         stage_pos = int(parts[0])
         stage_suffix = f"_s{stage_pos + 1}"
-        
+
         # Extract stage group if include_sg is True
         if include_sg:
             # Split by last underscore to get the sg part
             # Example: "0:Number_1_sg:0" -> ["0:Number_1", "sg:0"]
-            underscore_parts = image.stage_label.name.rsplit('_', 1)
+            underscore_parts = image.stage_label.name.rsplit("_", 1)
             # Split by ':' to get the stage group index
             # Example: "sg:0" -> ["sg", "0"]
-            sg_parts = underscore_parts[1].split(':')
+            sg_parts = underscore_parts[1].split(":")
             sg_index = int(sg_parts[1])
             sg_suffix = f"_sg{sg_index + 1}"
-    
+
     # Collect position information from existing planes if available
     # We'll use the first plane's position as a template
     position_x = None
@@ -76,7 +78,7 @@ def sanitize_pixels(image: Image, *, include_sg: bool = False, channel_list: lis
     position_x_unit = None
     position_y_unit = None
     position_z_unit = None
-    
+
     if pixels.planes:
         # Get position from first plane
         first_plane = pixels.planes[0]
@@ -85,16 +87,16 @@ def sanitize_pixels(image: Image, *, include_sg: bool = False, channel_list: lis
         position_x_unit = first_plane.position_x_unit
         position_y_unit = first_plane.position_y_unit
         position_z_unit = first_plane.position_z_unit
-        
+
         # Collect z positions for each z index
         for plane in pixels.planes:
             if plane.the_z not in position_z_by_z and plane.position_z is not None:
                 position_z_by_z[plane.the_z] = plane.position_z
-    
+
     # Generate new TiffData blocks and Planes
     new_tiff_data_blocks = []
     new_planes = []
-    
+
     # Track UUIDs per file name to ensure consistency
     file_uuids = {}
 
@@ -104,11 +106,11 @@ def sanitize_pixels(image: Image, *, include_sg: bool = False, channel_list: lis
     for c, channel_name in enumerate(channel_list):
         # Generate file name for this channel
         # Format: {base_name}_w{c+1}{channel_name}{sg_suffix}{stage_suffix}{time_suffix}.ome.tif
-        file_base = f"{base_name}_w{c+1}{channel_name}{sg_suffix}{stage_suffix}"
+        file_base = f"{base_name}_w{c + 1}{channel_name}{sg_suffix}{stage_suffix}"
 
         for t in range(pixels.size_t):
             # Add time suffix only if there are multiple timepoints
-            time_suffix = f"_t{t+1}" if pixels.size_t > 1 else ""
+            time_suffix = f"_t{t + 1}" if pixels.size_t > 1 else ""
             file_name = f"{file_base}{time_suffix}.ome.tif"
 
             # Generate a unique UUID for this file if not already done
@@ -124,36 +126,35 @@ def sanitize_pixels(image: Image, *, include_sg: bool = False, channel_list: lis
                     ifd=z,  # IFD index within the file
                     plane_count=1,
                     uuid=TiffData.UUID(
-                        file_name=file_name,
-                        value=file_uuids[file_name]
-                    )
+                        file_name=file_name, value=file_uuids[file_name]
+                    ),
                 )
                 new_tiff_data_blocks.append(tiff_data)
-                
+
                 # Create Plane object - only include position units if they exist
                 plane_kwargs = {
-                    'the_c': c,
-                    'the_t': t,
-                    'the_z': z,
-                    'position_x': position_x,
-                    'position_y': position_y,
-                    'position_z': position_z_by_z.get(z),
+                    "the_c": c,
+                    "the_t": t,
+                    "the_z": z,
+                    "position_x": position_x,
+                    "position_y": position_y,
+                    "position_z": position_z_by_z.get(z),
                 }
                 if position_x_unit is not None:
-                    plane_kwargs['position_x_unit'] = position_x_unit
+                    plane_kwargs["position_x_unit"] = position_x_unit
                 if position_y_unit is not None:
-                    plane_kwargs['position_y_unit'] = position_y_unit
+                    plane_kwargs["position_y_unit"] = position_y_unit
                 if position_z_unit is not None:
-                    plane_kwargs['position_z_unit'] = position_z_unit
-                
+                    plane_kwargs["position_z_unit"] = position_z_unit
+
                 plane = Plane(**plane_kwargs)
                 new_planes.append(plane)
-    
+
     # Create a copy of pixels with new tiff_data_blocks and planes
     pixels_dict = pixels.model_dump()
-    pixels_dict['tiff_data_blocks'] = new_tiff_data_blocks
-    pixels_dict['planes'] = new_planes
-    
+    pixels_dict["tiff_data_blocks"] = new_tiff_data_blocks
+    pixels_dict["planes"] = new_planes
+
     return Pixels(**pixels_dict)
 
 
@@ -214,13 +215,18 @@ class CompanionFile:
         """
         return self._ome
 
-    def sanitize_image(self, image_index: int, include_sg: bool = False, channel_list: list[str] | None = None) -> None:
+    def sanitize_image(
+        self,
+        image_index: int,
+        include_sg: bool = False,
+        channel_list: list[str] | None = None,
+    ) -> None:
         """
         Sanitize an image's pixels by regenerating tiff_data_blocks and planes.
-        
+
         This is useful for incomplete/corrupted companion.ome files where the
         tiff_data_blocks or planes are missing or incorrect.
-        
+
         Parameters:
         -----------
         image_index : int
@@ -237,16 +243,18 @@ class CompanionFile:
             raise IndexError(
                 f"image_index {image_index} out of range. CompanionFile contains {len(self._ome.images)} image(s)."
             )
-        
+
         image = self._ome.images[image_index]
-        
+
         # Sanitize the pixels
-        sanitized_pixels = sanitize_pixels(image, include_sg=include_sg, channel_list=channel_list)
-        
+        sanitized_pixels = sanitize_pixels(
+            image, include_sg=include_sg, channel_list=channel_list
+        )
+
         # Replace the image's pixels with sanitized version
         # We need to create a new image with the sanitized pixels
         image_dict = image.model_dump()
-        image_dict['pixels'] = sanitized_pixels
+        image_dict["pixels"] = sanitized_pixels
         self._ome.images[image_index] = Image(**image_dict)
 
 
@@ -273,10 +281,10 @@ def _create_channel_dataset(image: Image, base_path, chunks=None):
                 f"Inconsistent position_z values for the_z={plane.the_z}: "
                 f"{z_position_map[plane.the_z]} != {plane.position_z}"
             )
-    
+
     # Build z_positions array using the mapping
     z_positions = [z_position_map[z] for z in range(pixels.size_z)]
-    
+
     x_pixel_size = pixels.physical_size_x or 0.0
     y_pixel_size = pixels.physical_size_y or 0.0
     x_offsets = [(plane.position_x or 0.0) for plane in pixels.planes[: pixels.size_z]]
@@ -370,7 +378,6 @@ class OMEImageReader:
             else:
                 msg = f"Missing data: file {block.uuid.file_name} not found in {self.base_path}."
                 warnings.warn(msg, UserWarning)
-
 
     def read_plane(self, c, t, z):
         """Read a single (c, t, z) plane by opening the TIFF file on demand."""
