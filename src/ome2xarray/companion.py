@@ -12,7 +12,11 @@ import xarray as xr
 
 
 def sanitize_pixels(
-    image: Image, *, include_sg: bool = False, channel_list: list[str] | None = None
+    image: Image,
+    *,
+    include_sg: bool = False,
+    big_tiff: bool = False,
+    channel_list: list[str] | None = None,
 ) -> Pixels:
     """
     Sanitize incomplete/corrupted pixels by regenerating tiff_data_blocks and planes.
@@ -52,6 +56,7 @@ def sanitize_pixels(
     # Extract stage position number from stage_label if present
     stage_suffix = ""
     sg_suffix = ""
+    tiff_suffix = ".ome.tf2" if big_tiff else ".ome.tif"
     if image.stage_label and image.stage_label.name:
         # Parse stage_label.name like "0:Number1_sg:0" or "4:Position5:0"
         # Extract the first number after splitting by ":"
@@ -111,7 +116,7 @@ def sanitize_pixels(
         for t in range(pixels.size_t):
             # Add time suffix only if there are multiple timepoints
             time_suffix = f"_t{t + 1}" if pixels.size_t > 1 else ""
-            file_name = f"{file_base}{time_suffix}.ome.tif"
+            file_name = f"{file_base}{time_suffix}{tiff_suffix}"
 
             # Generate a unique UUID for this file if not already done
             if file_name not in file_uuids:
@@ -219,6 +224,7 @@ class CompanionFile:
         self,
         image_index: int,
         include_sg: bool = False,
+        big_tiff: bool = False,
         channel_list: list[str] | None = None,
     ) -> None:
         """
@@ -238,6 +244,9 @@ class CompanionFile:
             List of channel names in the correct order. If provided, this list will be
             used instead of pixels.channels to determine channel names. The length must
             match pixels.size_c. Default is None (use pixels.channels).
+        big_tiff : bool, optional
+            If True, use BigTIFF file extension (.ome.tf2) instead of standard (.ome.tif).
+            Default is False.
         """
         if image_index < 0 or image_index >= len(self._ome.images):
             raise IndexError(
@@ -248,7 +257,7 @@ class CompanionFile:
 
         # Sanitize the pixels
         sanitized_pixels = sanitize_pixels(
-            image, include_sg=include_sg, channel_list=channel_list
+            image, include_sg=include_sg, big_tiff=big_tiff, channel_list=channel_list
         )
 
         # Replace the image's pixels with sanitized version

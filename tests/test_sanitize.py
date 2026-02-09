@@ -118,7 +118,10 @@ def test_sanitize_pixels_with_stage_label():
     assert sanitized.tiff_data_blocks[0].uuid.file_name == "test_w1DAPI_s5.ome.tif"
 
 
-def test_sanitize_pixels_with_multiple_timepoints():
+@pytest.mark.parametrize(
+    "bigtiff,file_extension", [(False, ".ome.tif"), (True, ".ome.tf2")]
+)
+def test_sanitize_pixels_with_bigtiff_option(bigtiff, file_extension):
     """Test sanitization with multiple timepoints."""
     pixels = Pixels(
         id="Pixels:0",
@@ -145,17 +148,20 @@ def test_sanitize_pixels_with_multiple_timepoints():
 
     image = Image(id="Image:0", name="test", pixels=pixels)
 
-    sanitized = sanitize_pixels(image)
+    sanitized = sanitize_pixels(image, big_tiff=bigtiff)
 
     assert len(sanitized.tiff_data_blocks) == 3  # 1 channel * 3 times * 1 z
     assert (
-        sanitized.tiff_data_blocks[0].uuid.file_name == "test_w1Brightfield_t1.ome.tif"
+        sanitized.tiff_data_blocks[0].uuid.file_name
+        == f"test_w1Brightfield_t1{file_extension}"
     )
     assert (
-        sanitized.tiff_data_blocks[1].uuid.file_name == "test_w1Brightfield_t2.ome.tif"
+        sanitized.tiff_data_blocks[1].uuid.file_name
+        == f"test_w1Brightfield_t2{file_extension}"
     )
     assert (
-        sanitized.tiff_data_blocks[2].uuid.file_name == "test_w1Brightfield_t3.ome.tif"
+        sanitized.tiff_data_blocks[2].uuid.file_name
+        == f"test_w1Brightfield_t3{file_extension}"
     )
 
     # Assert planes exist and have correct time positions
