@@ -90,6 +90,57 @@ def test_dataset_default_chunking_keeps_z_in_one_chunk():
     assert first_array.chunks[1] == (size_z,)
 
 
+def test_get_dataset_with_time_index_reduces_t_dimension():
+    """Selecting one timepoint should build a dataset with T=1 and matching coord."""
+    companion_file_path = (
+        Path(__file__).parent
+        / "resources"
+        / "20250910_VV7-0-0-6-ScanSlide"
+        / "20250910_test4ch_2roi_3z_1_sg1.companion.ome"
+    )
+    companion_file = CompanionFile(companion_file_path)
+    companion_file.get_ome_metadata().images[0].pixels.size_t = 100
+
+    dataset = companion_file.get_dataset(image_index=0, time_index=5)
+    assert dataset.sizes["t"] == 1
+    assert dataset.coords["t"].values.tolist() == [5]
+
+
+def test_get_dataset_time_index_invalid_raises():
+    companion_file_path = (
+        Path(__file__).parent
+        / "resources"
+        / "20250910_VV7-0-0-6-ScanSlide"
+        / "20250910_test4ch_2roi_3z_1_sg1.companion.ome"
+    )
+    companion_file = CompanionFile(companion_file_path)
+    companion_file.get_ome_metadata().images[0].pixels.size_t = 100
+
+    with pytest.raises(IndexError):
+        companion_file.get_dataset(image_index=0, time_index=-1)
+    with pytest.raises(IndexError):
+        companion_file.get_dataset(image_index=0, time_index=100)
+
+
+def test_get_dataset_time_index_reduces_dask_graph_size():
+    """Single-timepoint loading should create fewer delayed tasks for large SizeT."""
+    companion_file_path = (
+        Path(__file__).parent
+        / "resources"
+        / "20250910_VV7-0-0-6-ScanSlide"
+        / "20250910_test4ch_2roi_3z_1_sg1.companion.ome"
+    )
+    companion_file = CompanionFile(companion_file_path)
+    companion_file.get_ome_metadata().images[0].pixels.size_t = 100
+
+    full = companion_file.get_dataset(image_index=0).to_dataarray(dim="c")
+    single_t = companion_file.get_dataset(image_index=0, time_index=5).to_dataarray(
+        dim="c"
+    )
+
+    assert len(single_t.data.__dask_graph__()) < len(full.data.__dask_graph__())
+
+
 def test_get_datatree():
     """Test that get_datatree returns a DataTree with all images as children"""
     companion_file_path = (

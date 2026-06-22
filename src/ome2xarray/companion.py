@@ -175,7 +175,11 @@ class CompanionFile:
             self._ome = from_xml(file.read())
 
     def get_dataset(
-        self, image_index: int, suppress_warnings: bool = False
+        self,
+        image_index: int,
+        *,
+        suppress_warnings: bool = False,
+        time_index: int | None = None,
     ) -> xr.Dataset:
         """
         Create a Dataset for one image/series from the companion.ome file.
@@ -185,6 +189,10 @@ class CompanionFile:
         -----------
         image_index : int
             Index of the image/series to retrieve
+        time_index : int | None, optional
+            If provided, only include this single timepoint in the dataset.
+            This avoids building delayed tasks for all timepoints and reduces
+            setup overhead for large SizeT metadata.
         Returns:
         --------
         xr.Dataset
@@ -198,6 +206,7 @@ class CompanionFile:
             image=self._ome.images[image_index],
             base_path=self._data_folder,
             suppress_warnings=suppress_warnings,
+            time_index=time_index,
         )
 
     def get_datatree(self, suppress_warnings: bool = False) -> xr.DataTree:
@@ -271,7 +280,11 @@ class CompanionFile:
 
 
 def _create_channel_dataset(
-    image: Image, base_path, chunks=None, suppress_warnings: bool = False
+    image: Image,
+    base_path,
+    chunks=None,
+    suppress_warnings: bool = False,
+    time_index: int | None = None,
 ):
     """
     Build an xarray.Dataset for one OME Image where each channel is a
@@ -321,8 +334,14 @@ def _create_channel_dataset(
     x_coords = np.arange(pixels.size_x) * x_pixel_size + x_offset
     y_coords = np.arange(pixels.size_y) * y_pixel_size + y_offset
 
+    if time_index is not None and (time_index < 0 or time_index >= pixels.size_t):
+        raise IndexError(
+            f"time_index {time_index} out of range. Image contains {pixels.size_t} timepoint(s)."
+        )
+    t_indices = [time_index] if time_index is not None else list(range(pixels.size_t))
+
     coords = {
-        "t": np.arange(pixels.size_t),
+        "t": np.asarray(t_indices, dtype=int),
         "z": z_positions,
         "y": y_coords,
         "x": x_coords,
@@ -340,7 +359,8 @@ def _create_channel_dataset(
     for c, ch_name in enumerate(channel_names):
         # Build dask array for this channel from one delayed read per timepoint.
         arrays_by_t = []
-        for t in range(pixels.size_t):
+        for t in t_indices:
+
             @delayed
             def read_stack_delayed(t=t, c=c):
                 return reader.read_stack(c, t)
