@@ -1,7 +1,9 @@
+import warnings
+from pathlib import Path
+
 import pytest
 
 from ome2xarray.companion import CompanionFile
-from pathlib import Path
 
 
 @pytest.mark.parametrize(
@@ -49,6 +51,28 @@ def test_get_dataset_invalid_image_index():
         companion_file.get_dataset(image_index=-1)
 
 
+def test_dataset_setup_defers_filesystem_io(monkeypatch):
+    """Dataset construction should not probe the filesystem."""
+    companion_file_path = (
+        Path(__file__).parent
+        / "resources"
+        / "20250910_VV7-0-0-6-ScanSlide"
+        / "20250910_test4ch_2roi_3z_1_sg1.companion.ome"
+    )
+    companion_file = CompanionFile(companion_file_path)
+
+    def fail_exists(self):
+        raise AssertionError("Path.exists should not be called during setup")
+
+    monkeypatch.setattr(Path, "exists", fail_exists, raising=False)
+    dataset = companion_file.get_dataset(image_index=0)
+    datatree = companion_file.get_datatree()
+
+    assert dataset is not None
+    assert datatree is not None
+    assert datatree.children
+
+
 def test_get_datatree():
     """Test that get_datatree returns a DataTree with all images as children"""
     companion_file_path = (
@@ -58,8 +82,10 @@ def test_get_datatree():
         / "20250910_test4ch_2roi_3z_1_sg1.companion.ome"
     )
     companion_file = CompanionFile(companion_file_path)
-    with pytest.warns(UserWarning, match="Missing data: file"):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         datatree = companion_file.get_datatree()
+    assert not caught
     metadata = companion_file.get_ome_metadata()
     first_id = metadata.images[0].id
 
@@ -69,8 +95,10 @@ def test_get_datatree():
 
     # First image should match what get_dataset returns
     ds_from_tree = datatree[first_id].ds
-    with pytest.warns(UserWarning, match="Missing data: file"):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         ds_direct = companion_file.get_dataset(image_index=0)
+    assert not caught
     # Check all channel variables
     for ch_name in ds_direct.data_vars:
         arr_tree = ds_from_tree[ch_name]
@@ -92,8 +120,7 @@ def test_get_datatree_single_image():
     images = metadata.images
     expected_ids = [img.id for img in images]
 
-    with pytest.warns(UserWarning, match="Missing data: file"):
-        datatree = companion_file.get_datatree()
+    datatree = companion_file.get_datatree()
 
     # DataTree should have one child per image
     assert set(datatree.children.keys()) == set(expected_ids)
@@ -105,7 +132,8 @@ def test_get_datatree_single_image():
     for ch_name, data_array in ds.data_vars.items():
         assert data_array.shape == (1, 3, 512, 512)  # (T, Z, Y, X)
         assert data_array.dtype == "uint16"
-        assert data_array.sum().compute() == 0  # missing raw files
+        with pytest.warns(UserWarning, match="Missing data: file"):
+            assert data_array.sum().compute() == 0  # missing raw files
 
 
 def test_z_positions_n2_lin28a633():
@@ -117,8 +145,7 @@ def test_z_positions_n2_lin28a633():
         / "n2-lin28a633_adult_2.companion.ome"
     )
     companion_file = CompanionFile(companion_file_path)
-    with pytest.warns(UserWarning, match="Missing data: file"):
-        dataset = companion_file.get_dataset(image_index=0)
+    dataset = companion_file.get_dataset(image_index=0)
 
     # Expected z positions: 65.4 to 84.0 in steps of 0.3
     import numpy as np

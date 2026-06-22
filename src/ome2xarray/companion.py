@@ -174,7 +174,9 @@ class CompanionFile:
             self._data_folder = data_folder if data_folder is not None else path.parent
             self._ome = from_xml(file.read())
 
-    def get_dataset(self, image_index: int) -> xr.Dataset:
+    def get_dataset(
+        self, image_index: int, suppress_warnings: bool = False
+    ) -> xr.Dataset:
         """
         Create a Dataset for one image/series from the companion.ome file.
         Channels are included as separate DataArrays with dims (t, z, y, x).
@@ -195,9 +197,10 @@ class CompanionFile:
         return _create_channel_dataset(
             image=self._ome.images[image_index],
             base_path=self._data_folder,
+            suppress_warnings=suppress_warnings,
         )
 
-    def get_datatree(self) -> xr.DataTree:
+    def get_datatree(self, suppress_warnings: bool = False) -> xr.DataTree:
         """
         Create an xarray.DataTree containing all images/series from the companion.ome file.
 
@@ -210,7 +213,7 @@ class CompanionFile:
         """
         children = {}
         for idx, image in enumerate(self._ome.images):
-            ds = self.get_dataset(idx)
+            ds = self.get_dataset(idx, suppress_warnings=suppress_warnings)
             children[image.id] = xr.DataTree(dataset=ds, name=image.id)
         return xr.DataTree(name="root", children=children)
 
@@ -267,13 +270,15 @@ class CompanionFile:
         self._ome.images[image_index] = Image(**image_dict)
 
 
-def _create_channel_dataset(image: Image, base_path, chunks=None):
+def _create_channel_dataset(
+    image: Image, base_path, chunks=None, suppress_warnings: bool = False
+):
     """
     Build an xarray.Dataset for one OME Image where each channel is a
     separate DataArray with dims (t, z, y, x). Time and spatial coordinates
     are shared across variables.
     """
-    reader = OMEImageReader(image, base_path)
+    reader = OMEImageReader(image, base_path, suppress_warnings=suppress_warnings)
     pixels = reader.pixels
 
     if chunks is None:
@@ -366,39 +371,60 @@ def _create_channel_dataset(image: Image, base_path, chunks=None):
 class OMEImageReader:
     """Reader for a single OME Image (series)."""
 
-    def __init__(self, image: Image, base_path):
+    def __init__(self, image: Image, base_path, suppress_warnings: bool = False):
         self.image = image
         self.base_path = Path(base_path)
         self.pixels = image.pixels
+        self.suppress_warnings = suppress_warnings
 
         # Create spatial index for fast lookups
         self.block_index = {}
+        self._resolved_blocks = {}
         self._create_block_index()
 
-    # Files are opened lazily when a plane is read to keep behavior simple
-    # and rely on delayed Dask tasks for loading TIFF plane data.
-
     def _create_block_index(self):
-        """Create index mapping (c,t,z) -> (file_name, ifd)"""
+        """Create index mapping (c,t,z) -> (file_name, ifd)."""
         for block in self.pixels.tiff_data_blocks:
             key = (block.first_c, block.first_t, getattr(block, "first_z", 0))
-            if (self.base_path / block.uuid.file_name).exists():
-                self.block_index[key] = (block.uuid.file_name, block.ifd)
-            else:
-                msg = f"Missing data: file {block.uuid.file_name} not found in {self.base_path}."
-                warnings.warn(msg, UserWarning)
+            self.block_index[key] = (block.uuid.file_name, block.ifd)
 
     def read_plane(self, c, t, z):
         """Read a single (c, t, z) plane by opening the TIFF file on demand."""
         key = (c, t, z)
 
-        if key not in self.block_index:
+        cached_block = self._resolved_blocks.get(key)
+        if cached_block is None and key not in self._resolved_blocks:
+            cached_block = self.block_index.get(key)
+            if cached_block is None:
+                self._resolved_blocks[key] = None
+                # Return zeros for missing planes
+                return np.zeros(
+                    (self.pixels.size_y, self.pixels.size_x),
+                    dtype=self.pixels.type.value,
+                )
+
+            file_name, ifd = cached_block
+            file_path = self.base_path / file_name
+            if not file_path.exists():
+                if not self.suppress_warnings:
+                    msg = (
+                        f"Missing data: file {file_name} not found in {self.base_path}."
+                    )
+                    warnings.warn(msg, UserWarning)
+                self._resolved_blocks[key] = None
+                return np.zeros(
+                    (self.pixels.size_y, self.pixels.size_x),
+                    dtype=self.pixels.type.value,
+                )
+
+            self._resolved_blocks[key] = cached_block
+        elif cached_block is None:
             # Return zeros for missing planes
             return np.zeros(
                 (self.pixels.size_y, self.pixels.size_x), dtype=self.pixels.type.value
             )
 
-        file_name, ifd = self.block_index[key]
+        file_name, ifd = self._resolved_blocks[key]
 
         file_path = self.base_path / file_name
         with tifffile.TiffFile(file_path) as tif:
