@@ -66,3 +66,8 @@ test = ["pytest", "pytest-cov"]
 [tool.pixi.feature.test.dependencies]
 pytest = ">=9.0.2,<10"
 pytest-cov = ">=7.0.0,<8"
+
+[tool.pytest.ini_options]
+addopts = [
+    "--import-mode=importlib",
+]
