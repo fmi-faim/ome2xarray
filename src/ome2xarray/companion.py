@@ -282,7 +282,12 @@ def _create_channel_dataset(
     pixels = reader.pixels
 
     if chunks is None:
-        chunks = {"t": 1, "z": 1, "y": pixels.size_y, "x": pixels.size_x}
+        chunks = {
+            "t": 1,
+            "z": pixels.size_z,
+            "y": pixels.size_y,
+            "x": pixels.size_x,
+        }
 
     # Per-plane positions (z, y, x) from OME metadata
     # Create mapping from the_z index to position_z value
@@ -333,23 +338,19 @@ def _create_channel_dataset(
     data_vars = {}
     # Outer loop over channels
     for c, ch_name in enumerate(channel_names):
-        # Build dask array for this channel: shape (t, z, y, x)
+        # Build dask array for this channel from one delayed read per timepoint.
         arrays_by_t = []
         for t in range(pixels.size_t):
-            arrays_by_z = []
-            for z in range(pixels.size_z):
+            @delayed
+            def read_stack_delayed(t=t, c=c):
+                return reader.read_stack(c, t)
 
-                @delayed
-                def read_plane_delayed(t=t, c=c, z=z):
-                    return reader.read_plane(c, t, z)
-
-                dask_plane = da.from_delayed(
-                    read_plane_delayed(),
-                    shape=(pixels.size_y, pixels.size_x),
-                    dtype=pixels.type.value,
-                )
-                arrays_by_z.append(dask_plane)
-            arrays_by_t.append(da.stack(arrays_by_z, axis=0))
+            dask_stack = da.from_delayed(
+                read_stack_delayed(),
+                shape=(pixels.size_z, pixels.size_y, pixels.size_x),
+                dtype=pixels.type.value,
+            )
+            arrays_by_t.append(dask_stack)
         dask_array = da.stack(arrays_by_t, axis=0)
         chunk_tuple = (
             chunks.get("t", 1),
@@ -379,7 +380,9 @@ class OMEImageReader:
 
         # Create spatial index for fast lookups
         self.block_index = {}
+        self.file_index = {}
         self._resolved_blocks = {}
+        self._resolved_files = {}
         self._create_block_index()
 
     def _create_block_index(self):
@@ -387,23 +390,27 @@ class OMEImageReader:
         for block in self.pixels.tiff_data_blocks:
             key = (block.first_c, block.first_t, getattr(block, "first_z", 0))
             self.block_index[key] = (block.uuid.file_name, block.ifd)
+            file_key = (block.first_c, block.first_t)
+            self.file_index.setdefault(file_key, {})
+            self.file_index[file_key][getattr(block, "first_z", 0)] = (
+                block.uuid.file_name,
+                block.ifd,
+            )
 
-    def read_plane(self, c, t, z):
-        """Read a single (c, t, z) plane by opening the TIFF file on demand."""
-        key = (c, t, z)
-
-        cached_block = self._resolved_blocks.get(key)
-        if cached_block is None and key not in self._resolved_blocks:
-            cached_block = self.block_index.get(key)
-            if cached_block is None:
-                self._resolved_blocks[key] = None
-                # Return zeros for missing planes
+    def read_stack(self, c, t):
+        """Read all z planes for a single (c, t) file."""
+        file_key = (c, t)
+        cached_stack = self._resolved_files.get(file_key)
+        if cached_stack is None and file_key not in self._resolved_files:
+            z_index = self.file_index.get(file_key)
+            if z_index is None:
+                self._resolved_files[file_key] = None
                 return np.zeros(
-                    (self.pixels.size_y, self.pixels.size_x),
+                    (self.pixels.size_z, self.pixels.size_y, self.pixels.size_x),
                     dtype=self.pixels.type.value,
                 )
 
-            file_name, ifd = cached_block
+            file_name = next(iter(z_index.values()))[0]
             file_path = self.base_path / file_name
             if not file_path.exists():
                 if not self.suppress_warnings:
@@ -411,21 +418,30 @@ class OMEImageReader:
                         f"Missing data: file {file_name} not found in {self.base_path}."
                     )
                     warnings.warn(msg, UserWarning)
-                self._resolved_blocks[key] = None
+                self._resolved_files[file_key] = None
                 return np.zeros(
-                    (self.pixels.size_y, self.pixels.size_x),
+                    (self.pixels.size_z, self.pixels.size_y, self.pixels.size_x),
                     dtype=self.pixels.type.value,
                 )
 
-            self._resolved_blocks[key] = cached_block
-        elif cached_block is None:
-            # Return zeros for missing planes
+            stack = np.zeros(
+                (self.pixels.size_z, self.pixels.size_y, self.pixels.size_x),
+                dtype=self.pixels.type.value,
+            )
+            with tifffile.TiffFile(file_path) as tif:
+                for z, (_, ifd) in z_index.items():
+                    stack[z] = tif.pages[ifd].asarray()
+
+            self._resolved_files[file_key] = stack
+        elif cached_stack is None:
             return np.zeros(
-                (self.pixels.size_y, self.pixels.size_x), dtype=self.pixels.type.value
+                (self.pixels.size_z, self.pixels.size_y, self.pixels.size_x),
+                dtype=self.pixels.type.value,
             )
 
-        file_name, ifd = self._resolved_blocks[key]
+        return self._resolved_files[file_key]
 
-        file_path = self.base_path / file_name
-        with tifffile.TiffFile(file_path) as tif:
-            return tif.pages[ifd].asarray()
+    def read_plane(self, c, t, z):
+        """Read a single (c, t, z) plane by opening the TIFF file on demand."""
+        stack = self.read_stack(c, t)
+        return stack[z]

@@ -73,6 +73,23 @@ def test_dataset_setup_defers_filesystem_io(monkeypatch):
     assert datatree.children
 
 
+def test_dataset_default_chunking_keeps_z_in_one_chunk():
+    """Default dataset construction should batch each z-stack per file."""
+    companion_file_path = (
+        Path(__file__).parent
+        / "resources"
+        / "20250910_VV7-0-0-6-ScanSlide"
+        / "20250910_test4ch_2roi_3z_1_sg1.companion.ome"
+    )
+    companion_file = CompanionFile(companion_file_path)
+    dataset = companion_file.get_dataset(image_index=0)
+    metadata = companion_file.get_ome_metadata()
+    size_z = metadata.images[0].pixels.size_z
+
+    first_array = next(iter(dataset.data_vars.values())).data
+    assert first_array.chunks[1] == (size_z,)
+
+
 def test_get_datatree():
     """Test that get_datatree returns a DataTree with all images as children"""
     companion_file_path = (
