@@ -609,3 +609,33 @@ def test_companion_file_sanitize_image_with_channel_list():
         assert any(
             custom_ch in block.uuid.file_name for custom_ch in custom_channel_list
         ), f"Filename {block.uuid.file_name} doesn't contain any custom channel name"
+
+
+def test_companion_file_sanitize_image_with_channel_mapping():
+    """Test CompanionFile.sanitize_image with channel_mapping parameter."""
+    companion_file_path = (
+        Path(__file__).parent
+        / "resources"
+        / "20250910_VV7-0-0-6-ScanSlide"
+        / "20250910_test4ch_2roi_3z_1_sg1.companion.ome"
+    )
+
+    companion_file = CompanionFile(companion_file_path)
+
+    # Create a custom channel mapping (index to new name)
+    custom_channel_mapping = {2: "OnlyChannel3"}
+
+    # Sanitize with custom channel mapping
+    companion_file.sanitize_image(0, channel_mapping=custom_channel_mapping)
+
+    # Get sanitized metadata
+    sanitized_metadata = companion_file.get_ome_metadata()
+    sanitized_image = sanitized_metadata.images[0]
+
+    # Check that mapped channel names are used in filenames
+    for block in sanitized_image.pixels.tiff_data_blocks:
+        # The filename should contain mapped channel name
+        assert any(
+            mapped_ch in block.uuid.file_name
+            for mapped_ch in custom_channel_mapping.values()
+        ), f"Filename {block.uuid.file_name} doesn't contain mapped channel name"

@@ -6,6 +6,7 @@ local linters = new Mapping<String, Step> {
     // ["prettier"] = Builtins.prettier
     // ["eslint"] = Builtins.eslint
     ["ruff"] = Builtins.ruff
+    ["ruff_format"] = Builtins.ruff_format
 
     // Or define custom steps:
     // ["custom"] {
