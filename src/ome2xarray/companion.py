@@ -17,6 +17,7 @@ def sanitize_pixels(
     include_sg: bool = False,
     big_tiff: bool = False,
     channel_list: list[str] | None = None,
+    channel_mapping: dict[int, str] | None = None,
 ) -> Pixels:
     """
     Sanitize incomplete/corrupted pixels by regenerating tiff_data_blocks and planes.
@@ -105,10 +106,15 @@ def sanitize_pixels(
     # Track UUIDs per file name to ensure consistency
     file_uuids = {}
 
-    if channel_list is None:
-        channel_list = [channel.name for channel in pixels.channels]
+    if channel_mapping is None:
+        if channel_list:
+            channel_mapping = {i: name for i, name in enumerate(channel_list)}
+        else:
+            channel_mapping = {
+                i: channel.name for i, channel in enumerate(pixels.channels)
+            }
 
-    for c, channel_name in enumerate(channel_list):
+    for c, channel_name in channel_mapping.items():
         # Generate file name for this channel
         # Format: {base_name}_w{c+1}{channel_name}{sg_suffix}{stage_suffix}{time_suffix}.ome.tif
         file_base = f"{base_name}_w{c + 1}{channel_name}{sg_suffix}{stage_suffix}"
@@ -238,6 +244,7 @@ class CompanionFile:
         include_sg: bool = False,
         big_tiff: bool = False,
         channel_list: list[str] | None = None,
+        channel_mapping: dict[int, str] | None = None,
     ) -> None:
         """
         Sanitize an image's pixels by regenerating tiff_data_blocks and planes.
@@ -269,7 +276,11 @@ class CompanionFile:
 
         # Sanitize the pixels
         sanitized_pixels = sanitize_pixels(
-            image, include_sg=include_sg, big_tiff=big_tiff, channel_list=channel_list
+            image,
+            include_sg=include_sg,
+            big_tiff=big_tiff,
+            channel_list=channel_list,
+            channel_mapping=channel_mapping,
         )
 
         # Replace the image's pixels with sanitized version
